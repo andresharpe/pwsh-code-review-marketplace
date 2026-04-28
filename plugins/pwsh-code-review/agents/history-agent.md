@@ -34,12 +34,32 @@ You do **not** own:
 
 ## Approach
 
+You operate under a tight time budget — typically 2-3 minutes total for tool calls. Walking the entire history of every file is the most common way this agent stalls. Stay shallow and targeted.
+
+### Phase 1: cheap survey (always run)
+
 For each changed file:
 
-1. `git log --follow --oneline <file>` for the last 50 commits.
-2. For each changed hunk, `git blame` the surrounding context to identify when the touched lines were last modified.
-3. Read commit messages of recent touches. Look for keywords: "fix", "revert", "regression", "do not", "important", "WARNING", "TODO", references to issue numbers.
-4. For each function changed, look at its history: how often modified, by how many people, with what stated intent.
+1. `git log --oneline -n 20 -- <file>` (no `--follow`, no `-p`). Collect the last 20 commit subjects only.
+2. Skim the subjects for signal words: `fix`, `revert`, `regression`, `do not`, `WARNING`, `important`, `BREAKING`, references to issue numbers.
+
+If no file has any signal-word match in its recent commits, you are done. Emit `[]` and return.
+
+### Phase 2: targeted dive (only on signals)
+
+For each file whose Phase 1 surfaced a signal commit:
+
+3. `git show --stat <suspect-sha>` to confirm the suspect commit touched the same lines this diff touches.
+4. `git blame -L <line>,<line> -- <file>` only for the specific changed-line ranges that overlap the suspect commit.
+5. Read the suspect commit message in full (`git log -1 <sha>`). The body is where the load-bearing context lives.
+
+### Hard stops
+
+- Do not run `git log -p` on any file. Use `git show` on specific SHAs only.
+- Do not `git blame` an entire file. Always restrict with `-L`.
+- Do not read the full diff if it is over ~500 lines. Work from `diff-context.json` and read only the changed-line ranges from the source files.
+- Cap total git invocations at ~20 per review. If you find yourself approaching that, emit findings for what you have and stop.
+- If the branch has fewer than 5 commits, the chance of a meaningful regression-of-prior-fix is low. Lean toward emitting `[]` quickly rather than deep-diving every file.
 
 ## Specific patterns
 
