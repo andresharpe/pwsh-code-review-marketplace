@@ -1,0 +1,17 @@
+{
+  "name": "pwsh-code-review",
+  "version": "0.1.3",
+  "description": "Multi-agent code review for PowerShell 7+ projects. Cross-platform aware, diff-focused, deterministic-first. Builds a project profile (architecture, standards, patterns, glossary) on bootstrap and uses it to deliver high-signal reviews with confidence and severity scoring.",
+  "author": {
+    "name": "DOTBOT"
+  },
+  "license": "MIT",
+  "keywords": [
+    "powershell",
+    "pwsh",
+    "code-review",
+    "static-analysis",
+    "psscriptanalyzer",
+    "cross-platform"
+  ]
+}

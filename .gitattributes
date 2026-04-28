@@ -1,0 +1,14 @@
+# Force LF line endings for all text. The plugin is cross-platform pwsh and
+# inconsistent EOL across clones causes false-positive diffs and breaks shell
+# hooks on Linux/macOS.
+* text=auto eol=lf
+
+# Pre-commit hook is sourced by bash; it must stay LF on Windows too.
+.githooks/pre-commit text eol=lf
+
+# PowerShell + JSON + Markdown are explicitly text.
+*.ps1   text eol=lf
+*.psm1  text eol=lf
+*.psd1  text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf

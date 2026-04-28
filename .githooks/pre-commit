@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Gitleaks pre-commit hook for pwsh-code-review-marketplace.
+#
+# Activation: from the repo root, run once per clone:
+#   git config core.hooksPath .githooks
+#
+# Skip in an emergency with: git commit --no-verify
+# (Don't make a habit of it.)
+
+set -euo pipefail
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks not on PATH. Install it: https://github.com/gitleaks/gitleaks" >&2
+    echo "pre-commit: skipping scan (commit allowed). Install gitleaks before pushing." >&2
+    exit 0
+fi
+
+# Scan only staged changes. --redact stops the secret content reaching the terminal.
+if ! gitleaks protect --staged --redact --no-banner --exit-code 1; then
+    echo "" >&2
+    echo "pre-commit: gitleaks found a secret in your staged changes." >&2
+    echo "pre-commit: remove the secret and try again, or run 'git commit --no-verify' to bypass (not recommended)." >&2
+    exit 1
+fi
+
+exit 0
