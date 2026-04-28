@@ -78,6 +78,18 @@ If the finding contradicts a static-layer result (agent says "error here", stati
 
 Reason: `Contradicts static layer without justification`.
 
+### Test 8.5: is it a prose-only nit?
+
+If the finding's `file` matches `*.md`, `*.markdown`, or refers to comment-based help / inline comments, AND the `consequence` describes a wording, grammar, spelling, or punctuation issue, **drop** unless it matches one of the principle-19 exceptions:
+
+- (a) the typo appears in user-facing CLI output or error messages (verifiable from the diff context)
+- (b) the typo is in a function or parameter name
+- (c) the typo breaks a markdown link target (the URL or anchor it points to)
+
+Reason: `Prose-only nit, principle 19`.
+
+This test catches the largest noise class observed in real-world AI reviewers.
+
 ### Test 9: nit cap
 
 After all other tests, count surviving `nit` findings. If above the configured cap (default 3), keep the highest-confidence ones, drop the rest.
