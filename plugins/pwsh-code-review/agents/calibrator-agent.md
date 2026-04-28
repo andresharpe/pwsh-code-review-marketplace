@@ -74,7 +74,7 @@ Reason: `No fix proposed, converted to question`.
 
 ### Test 8: is the static layer ground truth being contradicted?
 
-If the finding contradicts a static-layer result (agent says "error here", static layer reported "no issue at this line"), drop unless the finding's `evidence[]` explicitly justifies the divergence. Static layer is ground truth (per `principles.md` rule 17).
+If the finding contradicts a static-layer result (agent says "error here", static layer reported "no issue at this line"), drop unless the finding's `evidence[]` explicitly justifies the divergence. Static layer is ground truth (per `docs/principles.md` rule 17).
 
 Reason: `Contradicts static layer without justification`.
 

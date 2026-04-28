@@ -94,7 +94,7 @@ Findings are dropped before scoring if any of these are true:
 - Inside generated code (matched by `.pwsh-review/generated-paths.json`).
 - Pedantic nitpick with no concrete consequence.
 - Quality issue that is not in `standards.md`.
-- Prose typo, grammar, or punctuation in non-user-facing markdown, comment-based help, or comments. Exceptions: typos in user-facing CLI output or error messages, in function/parameter names, or that break a markdown link target. Per `principles.md` rule 19.
+- Prose-only typo, grammar, or punctuation issue in markdown, comment-based help, or comments that has no runtime impact. Exceptions: typos in user-facing CLI output or error messages, in function/parameter names, or that break a markdown link target. Per `docs/principles.md` rule 19.
 
 ## Output schema
 
