@@ -69,5 +69,8 @@ jobs:
           git add .claude-plugin/marketplace.json \
                   plugins/pwsh-code-review/.claude-plugin/plugin.json
           git commit -m "chore(release): bump to v${next}"
-          git tag "v${next}"
+          # Annotated tag (-a). --follow-tags below only pushes annotated
+          # tags; a lightweight `git tag "v..."` would be created on the
+          # runner and silently discarded.
+          git tag -a "v${next}" -m "Release v${next}"
           git push origin main --follow-tags
