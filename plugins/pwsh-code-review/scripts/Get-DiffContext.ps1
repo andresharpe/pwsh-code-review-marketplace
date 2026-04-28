@@ -111,9 +111,13 @@ try {
                 $changedFiles += $currentFile
             }
         } elseif ($line -match '^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@') {
+            # Capture from $Matches BEFORE any subsequent -match runs. The
+            # inner extension check below would otherwise overwrite $Matches
+            # and turn $Matches[1] into the captured extension ('ps1') —
+            # which then crashes the [int] cast.
+            $startLine = [int]$Matches[1]
+            $count = if ($Matches[2]) { [int]$Matches[2] } else { 1 }
             if ($currentFile -and $currentFile -match '\.(ps1|psm1|psd1)$') {
-                $startLine = [int]$Matches[1]
-                $count = if ($Matches[2]) { [int]$Matches[2] } else { 1 }
                 $hunks += [ordered]@{
                     file       = $currentFile
                     line_start = $startLine
