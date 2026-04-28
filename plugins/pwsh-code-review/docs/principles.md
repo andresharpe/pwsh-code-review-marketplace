@@ -75,3 +75,15 @@ If PSScriptAnalyzer says it is an error, it is an error. The agents add judgemen
 ## 18. Comment with concrete consequence or do not comment
 
 Every finding answers three questions in one or two sentences each: what changed, why it is a problem (with a specific consequence, ideally a caller, test, or pattern), what to do. If a finding cannot answer all three, drop it.
+
+## 19. Prose typos do not count
+
+Spelling, grammar, and punctuation in markdown, comment-based help, and code comments are not findings unless the typo:
+
+- (a) appears in user-facing CLI output or error messages, or
+- (b) is in a function or parameter name, or
+- (c) breaks a markdown link target.
+
+Style preferences in prose (rewording for "clarity", switching between equivalent phrasings, contractions vs no contractions) are out of scope. A reviewer that flags grammar style trains readers to ignore the reviewer.
+
+This principle is a deliberate choice to suppress the largest noise class observed in real-world AI reviewers — pure prose nits are 30%+ of generalist comments, and over half have no runtime effect. The exceptions above keep the load-bearing cases (a typo that breaks a CLI message the user sees, or a misnamed function) in scope.

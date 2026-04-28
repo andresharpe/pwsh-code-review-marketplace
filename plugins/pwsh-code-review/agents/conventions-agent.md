@@ -109,3 +109,9 @@ You will tend to over-rate. Specifically:
 - Confidence above 80 requires direct citation of `standards.md` or a `patterns/` file. Generic appeals to "best practice" cap at 70.
 
 When in doubt, drop. A missed nit is invisible. A wrong major makes the whole reviewer untrustworthy.
+
+## Prose is not in scope
+
+Drop any finding whose only substance is wording, spelling, grammar, or comment style in non-API surface — i.e. not user-facing CLI output, not a function or parameter name, not a markdown link target. Per `docs/principles.md` rule 19.
+
+Comment quality findings remain in scope only when the comment is documenting *what* the code does instead of *why* (a real principle-8 violation), or when a stale comment actively misleads a reader about the current behaviour. "This comment could be reworded for clarity" is not a finding.
