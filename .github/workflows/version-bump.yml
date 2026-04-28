@@ -1,0 +1,73 @@
+name: Auto version bump
+
+# Bumps the minor version on every push to main, including PR merges.
+# Skips its own bump commits via the if-guard so it does not loop.
+#
+# Bumps:
+#   .claude-plugin/marketplace.json   (top-level .version + .plugins[*].version)
+#   plugins/pwsh-code-review/.claude-plugin/plugin.json   (.version)
+#
+# Tags v<new-version> and pushes the tag along with the bump commit.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(release):') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute next minor version
+        id: ver
+        run: |
+          current=$(jq -r .version .claude-plugin/marketplace.json)
+          IFS=. read -r maj min pat <<<"$current"
+          next="${maj}.$((min + 1)).0"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "Bumping ${current} -> ${next}"
+
+      - name: Bump versions in JSON files
+        run: |
+          next="${{ steps.ver.outputs.next }}"
+
+          # marketplace.json: top-level .version, plus the plugin entry's .version
+          tmp=$(mktemp)
+          jq --arg v "$next" '
+            .version = $v
+            | .plugins = (
+                .plugins | map(
+                  if .name == "pwsh-code-review" then .version = $v else . end
+                )
+              )
+          ' .claude-plugin/marketplace.json > "$tmp"
+          mv "$tmp" .claude-plugin/marketplace.json
+
+          # plugin.json: .version
+          tmp=$(mktemp)
+          jq --arg v "$next" '.version = $v' \
+            plugins/pwsh-code-review/.claude-plugin/plugin.json > "$tmp"
+          mv "$tmp" plugins/pwsh-code-review/.claude-plugin/plugin.json
+
+      - name: Commit, tag, push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          next="${{ steps.ver.outputs.next }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .claude-plugin/marketplace.json \
+                  plugins/pwsh-code-review/.claude-plugin/plugin.json
+          git commit -m "chore(release): bump to v${next}"
+          git tag "v${next}"
+          git push origin main --follow-tags
