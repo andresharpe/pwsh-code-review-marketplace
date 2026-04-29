@@ -118,6 +118,18 @@ When a function changes the shape of an object it emits (`[pscustomobject]@{...}
 
 Set `EnableShapeTracking = $false` in `.pwsh-review/config.psd1` to disable the check. Defaults to on.
 
+### Markdown content
+
+When a diff touches at least one `*.md` or `*.markdown` file, the reviewer dispatches a sixth agent that reads the changed files alongside the rest of the markdown corpus, the glossary, and the architecture doc. Five rule classes under `PWSH-MD-NNN`:
+
+- `PWSH-MD-001` — reference drift: a backtick-quoted path uses a non-canonical form versus the rest of the corpus. Minor, confidence 80 when the canonical form is ≥2× more common, 60 otherwise.
+- `PWSH-MD-002` — broken reference: a backtick-quoted relative path does not resolve to an existing file. Major, confidence 90.
+- `PWSH-MD-003` — glossary contradiction: prose makes a factual claim that contradicts a definition in `glossary.md`. Minor, confidence cap 70.
+- `PWSH-MD-004` — cross-file claim drift: the same concept is described differently across two corpus files, with one of them touched by the diff. Minor, confidence cap 70.
+- `PWSH-MD-005` — code-fence example mismatch: the JSON / YAML / pwsh inside a code fence has a shape that contradicts what the surrounding prose says it shows. Major, confidence 80 when mechanically provable.
+
+Configure `MarkdownAllowedReferenceForms = @('README.md', 'docs/README.md')` in `.pwsh-review/config.psd1` for path forms that legitimately appear in multiple shapes across the corpus. Defaults to empty.
+
 ## Module manifests
 
 - `FunctionsToExport` lists the actual exports (no `'*'`).
