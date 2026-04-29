@@ -94,13 +94,17 @@ Launch the following agents **in parallel**. Each receives:
 - The project profile from Phase 3
 - The principles and severity rubric
 
-Agents:
+Agents (always dispatched):
 
 1. **`agents/conventions-agent.md`** - checks against `standards.md`, `patterns/`, comment-based help, naming.
 2. **`agents/pwsh-idioms-agent.md`** - language-specific traps (null comparison, pipeline correctness, output type, cross-platform, encoding, native commands).
 3. **`agents/diff-bug-agent.md`** - bugs introduced by the change, signature/contract changes, scope leaks, idempotency, concurrency.
 4. **`agents/security-agent.md`** - injection, credentials, dangerous cmdlets, MOTW, untrusted input.
 5. **`agents/history-agent.md`** - git blame and history, regressions, reverts, churn hotspots.
+
+Conditional agents (dispatched only when the trigger applies):
+
+6. **`agents/markdown-content-agent.md`** - cross-file documentation integrity (reference drift, broken refs, glossary contradictions, claim drift, fence/prose mismatches). **Dispatch only when the diff touches at least one `*.md` or `*.markdown` file.** When the diff has no markdown changes, skip this agent entirely (zero cost).
 
 Each agent emits findings as JSON conforming to the schema in `docs/severity-rubric.md`. Agents do not see each other's findings during the dispatch phase.
 
@@ -182,9 +186,11 @@ _Reviewed by pwsh-code-review. Use `# pwsh-review:disable-next-line <rule>` to s
 Skip with a clean exit message in these cases:
 
 - Diff is empty.
-- Diff contains only `.md`, `.txt`, or asset files (still run markdownlint via static layer if applicable, but no agents).
+- Diff contains only `.txt` or asset files (still run markdownlint via static layer if applicable, but no agents).
 - PR is closed or draft.
 - PR has been reviewed at the current SHA already (check via `gh pr view --json reviews`).
+
+Markdown-only diffs are **not** a skip case anymore: dispatch only `markdown-content-agent` (the other five agents have nothing to say about pure-markdown changes). The static layer's `markdownlint` still runs.
 
 ## Performance and caching
 

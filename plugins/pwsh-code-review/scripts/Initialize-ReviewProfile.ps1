@@ -216,12 +216,16 @@ try {
         $platformsList = ($detectedPlatforms | ForEach-Object { "'$_'" }) -join ', '
         $configContent = @"
 @{
-    ConfidenceThreshold = 80
-    NitCap              = 3
-    Platforms           = @($platformsList)
-    SkipAgents          = @()
-    StaticAnalysisOnly  = `$false
-    EnableShapeTracking = `$true
+    ConfidenceThreshold          = 80
+    NitCap                       = 3
+    Platforms                    = @($platformsList)
+    SkipAgents                   = @()
+    StaticAnalysisOnly           = `$false
+    EnableShapeTracking          = `$true
+    # Markdown-content-agent allowlist for path forms that legitimately
+    # appear in multiple shapes across the corpus (e.g. when the same
+    # basename has two valid relative paths). Default empty.
+    MarkdownAllowedReferenceForms = @()
 }
 "@
         $configContent | Set-Content $configPath -Encoding utf8NoBOM
