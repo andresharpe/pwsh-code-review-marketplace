@@ -106,13 +106,19 @@ A code fence in a changed hunk has a shape that contradicts what the surrounding
 
 ## Output
 
-Emit findings as JSON per `docs/severity-rubric.md`. Each finding includes:
+Emit findings as JSON per `docs/severity-rubric.md`. Use the canonical field names that the merger reads — using anything else will break under strict mode in `scripts/Merge-Findings.ps1`. Each finding includes:
 
 - `agent: "markdown-content"`
-- `rule_name`: one of `PWSH-MD-001` through `PWSH-MD-005`
+- `rule`: one of `PWSH-MD-001` through `PWSH-MD-005`
 - `file`: the changed markdown file
-- `line`: the line in the changed file
-- `severity`, `confidence`, `consequence`, `fix`, `evidence[]` per rubric
+- `line_start` and `line_end`: the line range in the changed file (use the same number for both when a finding sits on a single line)
+- `severity` (`blocker` / `major` / `minor` / `nit` / `question`)
+- `confidence` (integer 0-100)
+- `message`: one-sentence statement of the finding
+- `consequence`: what breaks or confuses if this is left as-is
+- `fix`: one-sentence remediation
+- `fix_snippet` (optional): the corrected text, when applicable
+- `evidence[]`: array of `path:line` references that justify the finding (the cross-file citations are mandatory for this agent)
 
 ## Calibration discipline
 

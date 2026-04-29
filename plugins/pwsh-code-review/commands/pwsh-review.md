@@ -186,9 +186,11 @@ _Reviewed by pwsh-code-review. Use `# pwsh-review:disable-next-line <rule>` to s
 Skip with a clean exit message in these cases:
 
 - Diff is empty.
-- Diff contains only `.md`, `.txt`, or asset files (still run markdownlint via static layer if applicable, but no agents).
+- Diff contains only `.txt` or asset files (still run markdownlint via static layer if applicable, but no agents).
 - PR is closed or draft.
 - PR has been reviewed at the current SHA already (check via `gh pr view --json reviews`).
+
+Markdown-only diffs are **not** a skip case anymore: dispatch only `markdown-content-agent` (the other five agents have nothing to say about pure-markdown changes). The static layer's `markdownlint` still runs.
 
 ## Performance and caching
 
