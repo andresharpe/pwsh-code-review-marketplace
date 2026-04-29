@@ -62,7 +62,7 @@ try {
     $static = if (Test-Path $staticPath) {
         Get-Content $staticPath -Raw | ConvertFrom-Json -AsHashtable
     } else {
-        @{ psscriptanalyzer = @(); compatibility = @(); injection_hunter = @(); gitleaks = @(); pester = $null; markdownlint = @(); test_brittleness = @(); tools_missing = @() }
+        @{ psscriptanalyzer = @(); compatibility = @(); injection_hunter = @(); gitleaks = @(); pester = $null; markdownlint = @(); test_brittleness = @(); template_substitution = @(); tools_missing = @() }
     }
 
     # Load calibrated agent findings
@@ -84,15 +84,16 @@ try {
 
     $staticAsFindings = @()
 
-    # PSScriptAnalyzer & Compatibility & InjectionHunter & TestBrittleness
-    foreach ($cat in @('psscriptanalyzer', 'compatibility', 'injection_hunter', 'test_brittleness')) {
+    # PSScriptAnalyzer & Compatibility & InjectionHunter & heuristic sources
+    $heuristicSources = @('test_brittleness', 'template_substitution')
+    foreach ($cat in @('psscriptanalyzer', 'compatibility', 'injection_hunter') + $heuristicSources) {
         foreach ($f in @($static[$cat])) {
             if (-not $f) { continue }
             $sev = $staticToOur[$f.severity] ?? 'minor'
             if ($cat -eq 'injection_hunter') { $sev = 'blocker' }
-            # Heuristic sources carry a per-finding `confidence` field; deterministic
-            # sources are 100 by default.
-            $conf = if ($cat -eq 'test_brittleness' -and $f.confidence) { [int]$f.confidence } else { 100 }
+            # Heuristic sources carry a per-finding `confidence` field;
+            # deterministic sources are 100 by default.
+            $conf = if (($cat -in $heuristicSources) -and $f.confidence) { [int]$f.confidence } else { 100 }
             $staticAsFindings += [ordered]@{
                 source     = $cat
                 agent      = 'static'
@@ -143,12 +144,13 @@ try {
 
     $passedAgent = @($agentFindings | Where-Object { Test-Pass $_.severity $_.confidence })
 
-    # Heuristic static findings (test_brittleness) carry per-rule confidence and
-    # must flow through the same filter matrix as agent findings.
+    # Heuristic static findings (test_brittleness, template_substitution) carry
+    # per-rule confidence and must flow through the same filter matrix as agent
+    # findings.
     $passedStaticHeuristic = @($staticAsFindings | Where-Object {
-        $_.source -eq 'test_brittleness' -and (Test-Pass $_.severity $_.confidence)
+        ($_.source -in $heuristicSources) -and (Test-Pass $_.severity $_.confidence)
     })
-    $deterministicStatic = @($staticAsFindings | Where-Object { $_.source -ne 'test_brittleness' })
+    $deterministicStatic = @($staticAsFindings | Where-Object { $_.source -notin $heuristicSources })
     $staticAsFindings = $deterministicStatic + $passedStaticHeuristic
 
     # ---- Cap nits and praises ----
@@ -234,11 +236,20 @@ try {
     [void]$sb.AppendLine("- Gitleaks: $(@($static.gitleaks).Count) finding(s)")
     if ($static.ContainsKey('test_brittleness')) {
         $tbRaw  = @($static.test_brittleness).Count
-        $tbKept = @($passedStaticHeuristic).Count
+        $tbKept = @($passedStaticHeuristic | Where-Object { $_.source -eq 'test_brittleness' }).Count
         if ($tbRaw -eq $tbKept) {
             [void]$sb.AppendLine("- Test brittleness: $tbRaw finding(s)")
         } else {
             [void]$sb.AppendLine("- Test brittleness: $tbRaw raw, $tbKept post-filter")
+        }
+    }
+    if ($static.ContainsKey('template_substitution')) {
+        $tplRaw  = @($static.template_substitution).Count
+        $tplKept = @($passedStaticHeuristic | Where-Object { $_.source -eq 'template_substitution' }).Count
+        if ($tplRaw -eq $tplKept) {
+            [void]$sb.AppendLine("- Template substitution: $tplRaw finding(s)")
+        } else {
+            [void]$sb.AppendLine("- Template substitution: $tplRaw raw, $tplKept post-filter")
         }
     }
     if ($static.pester -and $static.pester.ran) {

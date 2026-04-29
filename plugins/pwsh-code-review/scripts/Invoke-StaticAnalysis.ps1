@@ -253,6 +253,19 @@ try {
         }
     }
 
+    # 8. Template-substitution check (heuristic scan of `.md` for `{{TOKEN}}`
+    #    misuse — unknown tokens, dead "if {{X}} is empty" conditionals).
+    $tplScript = Join-Path $PSScriptRoot 'Test-TemplateSubstitution.ps1'
+    if (Test-Path $tplScript) {
+        $jobs += Start-ThreadJob -Name 'TemplateSubstitution' -ScriptBlock {
+            param($repoRoot, $script)
+            Push-Location $repoRoot
+            try {
+                , (& $script -RepoRoot $repoRoot)
+            } finally { Pop-Location }
+        } -ArgumentList $RepoRoot, $tplScript
+    }
+
     # 7. Test brittleness (heuristic AST scan over Pester / dotbot test files)
     $tbScript = Join-Path $PSScriptRoot 'Test-Brittleness.ps1'
     if (Test-Path $tbScript) {
@@ -294,6 +307,7 @@ try {
         pester            = $null
         markdownlint      = @()
         test_brittleness  = @()
+        template_substitution = @()
         tools_missing     = @()
     }
 
@@ -342,6 +356,17 @@ try {
                     confidence = $_.confidence
                 }
             }) }
+            'TemplateSubstitution' { $aggregate.template_substitution = @($r.Value | ForEach-Object {
+                @{
+                    rule_name  = $_.rule_name
+                    severity   = $_.severity
+                    file       = $_.file
+                    line       = $_.line
+                    column     = $_.column
+                    message    = $_.message
+                    confidence = $_.confidence
+                }
+            }) }
         }
     }
 
@@ -355,14 +380,15 @@ try {
     $aggregate | ConvertTo-Json -Depth 20 | Set-Content $outputPath -Encoding utf8NoBOM
 
     [pscustomobject]@{
-        OutputPath              = $outputPath
-        PSSAFindings            = $aggregate.psscriptanalyzer.Count
-        CompatibilityIssues     = $aggregate.compatibility.Count
-        InjectionFindings       = $aggregate.injection_hunter.Count
-        GitleaksFindings        = $aggregate.gitleaks.Count
-        TestBrittlenessFindings = $aggregate.test_brittleness.Count
-        PesterFailed            = if ($aggregate.pester) { $aggregate.pester.failed } else { 'not-run' }
-        ToolsMissing            = $aggregate.tools_missing
+        OutputPath                  = $outputPath
+        PSSAFindings                = $aggregate.psscriptanalyzer.Count
+        CompatibilityIssues         = $aggregate.compatibility.Count
+        InjectionFindings           = $aggregate.injection_hunter.Count
+        GitleaksFindings            = $aggregate.gitleaks.Count
+        TestBrittlenessFindings     = $aggregate.test_brittleness.Count
+        TemplateSubstitutionFindings = $aggregate.template_substitution.Count
+        PesterFailed                = if ($aggregate.pester) { $aggregate.pester.failed } else { 'not-run' }
+        ToolsMissing                = $aggregate.tools_missing
     }
 } finally {
     Pop-Location
