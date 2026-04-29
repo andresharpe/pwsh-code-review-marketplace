@@ -435,6 +435,36 @@ $entries
         }
     }
 
+    # template-rules.json - discover {{TOKEN}} substitutions
+    $templateRulesPath = Join-Path $profileDir 'template-rules.json'
+    if ($Mode -ne 'Refresh' -or -not (Test-Path $templateRulesPath)) {
+        $tokenScript = Join-Path $PluginRoot 'scripts/Get-TemplateTokens.ps1'
+        if (Test-Path $tokenScript) {
+            try {
+                $discovered = & $tokenScript -RepoRoot $RepoRoot
+                $tokenList = @($discovered | ForEach-Object {
+                    [ordered]@{
+                        name             = $_.Name
+                        always_nonempty  = [bool]$_.AlwaysNonEmpty
+                        defined_at       = @($_.DefinedAt)
+                    }
+                })
+                if (@($tokenList).Count -gt 0) {
+                    $rules = [ordered]@{
+                        schema_version = '1'
+                        scan_globs     = @('**/*.md', '**/*.markdown')
+                        tokens         = $tokenList
+                    }
+                    $rules | ConvertTo-Json -Depth 5 |
+                        Set-Content $templateRulesPath -Encoding utf8NoBOM
+                    Write-Host "  template-rules.json: $(@($tokenList).Count) token(s) discovered" -ForegroundColor DarkGray
+                }
+            } catch {
+                Write-Warning "Template-token discovery failed: $($_.Exception.Message)"
+            }
+        }
+    }
+
     # ---- Phase 3: AST index ----
 
     Write-Host "Building AST index..." -ForegroundColor Cyan

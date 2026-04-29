@@ -123,6 +123,10 @@ This is the area where this plugin earns its keep. Be aggressive here.
 - `[bool]$x` where `$x` is a string: flag (`major`, conf 90). PowerShell coerces "false" to `$true`.
 - Date parsing without `[CultureInfo]::InvariantCulture`: flag (`major`, conf 80) for cross-platform code.
 
+### Template substitution
+
+The static layer flags `{{TOKEN}}` misuse in markdown under `PWSH-TPL-001` (unknown token, no `-replace` rule) and `PWSH-TPL-002` (dead "if `{{X}}` is empty" prose where `X` is provably always non-empty). Do not re-flag these — the static layer owns them. You may upgrade a `PWSH-TPL-002` finding from `minor` to `major` only when you can read the corresponding `-replace` source and confirm the dead-conditional reasoning. Otherwise leave it alone.
+
 ## Output
 
 Emit per `docs/severity-rubric.md`. Use stable rule IDs in the `PWSH-LANG-NNN` namespace.

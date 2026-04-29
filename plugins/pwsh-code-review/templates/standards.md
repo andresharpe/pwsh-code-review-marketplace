@@ -103,6 +103,13 @@ A finding fires only when the candidate expression sits inside an assertion call
 - `PWSH-TEST-004` - ordered access on a hashtable's `.Keys` (`($h.Keys)[N]` or `$h.Keys | Select-Object -First/-Last/-Index`) inside a test scriptblock. Hashtable key enumeration order is unspecified.
 - `PWSH-TEST-005` - `Should -Match` / `-match` against a regex literal containing literal `\\` and no forward slash, inside an assertion. Will fail on Linux/macOS CI.
 
+### Template substitution
+
+When the project renders prompts (or any text) by `-replace`-ing `{{TOKEN}}` placeholders in markdown, the reviewer flags two failure classes under `PWSH-TPL-NNN`. The token catalog is auto-discovered from `-replace '\{\{TOKEN\}\}', $rhs` patterns and snapshotted to `.pwsh-review/template-rules.json` at bootstrap.
+
+- `PWSH-TPL-001` - the markdown references a `{{TOKEN}}` that has no `-replace` rule anywhere in the repo. The runtime will leave the literal placeholder in the rendered output. Either fix the typo or add a substitution rule.
+- `PWSH-TPL-002` - prose conditional that the substitution will never satisfy: text near a `{{X}}` reference says "if `{{X}}` is empty / missing / blank / absent / not set". When `X` is provably always non-empty (the `-replace` source declares an explicit fallback), the conditional is dead code (confidence 80). When `X`'s emptiness is uncertain, the finding is hedged (confidence 60).
+
 ## Module manifests
 
 - `FunctionsToExport` lists the actual exports (no `'*'`).
