@@ -182,6 +182,10 @@ try {
                 properties_added        = @()
                 stale_consumers         = @()
             }
+            # Lookup table: dropped property name (lowercase) -> array of
+            # pre-version emit-site lines. Populated inside the shape-diff
+            # try block; consumed by the stale-consumer walk below.
+            $emitSiteLinesByProp = @{}
 
             try {
                 $preContent = git show "${diffBase}:${file}" 2>$null
@@ -212,6 +216,19 @@ try {
                                     $delta.properties_dropped.Count -gt 0 -or
                                     $delta.properties_added.Count -gt 0
                                 )
+                                # Index pre-version emit sites by property
+                                # name so the stale-consumer walk below can
+                                # cite the line(s) that emitted each dropped
+                                # property. The agent uses this for evidence[].
+                                foreach ($site in $preEmits) {
+                                    foreach ($p in @($site.properties)) {
+                                        $key = $p.ToLowerInvariant()
+                                        if (-not $emitSiteLinesByProp.ContainsKey($key)) {
+                                            $emitSiteLinesByProp[$key] = @()
+                                        }
+                                        $emitSiteLinesByProp[$key] += $site.line
+                                    }
+                                }
                             } catch {
                                 Write-Verbose "Shape-diff failed for $($func.name): $($_.Exception.Message)"
                             }
@@ -277,13 +294,19 @@ try {
                     foreach ($cs in @($callerFunc.consumes_shape)) {
                         if ($cs.via_call -ne $func.name) { continue }
                         if ($cs.dynamic) { continue }
-                        if ($cs.property.ToLowerInvariant() -notin $droppedLower) { continue }
+                        $propLower = $cs.property.ToLowerInvariant()
+                        if ($propLower -notin $droppedLower) { continue }
+                        $emitLines = @()
+                        if ($emitSiteLinesByProp.ContainsKey($propLower)) {
+                            $emitLines = @($emitSiteLinesByProp[$propLower] | Sort-Object -Unique)
+                        }
                         $staleConsumers += [ordered]@{
                             caller_function = $callerName
                             caller_file     = $callerFile
                             consumer_line   = $cs.line
                             property        = $cs.property
                             dynamic         = $cs.dynamic
+                            emit_site_lines = $emitLines
                         }
                     }
                 }

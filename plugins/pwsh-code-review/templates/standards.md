@@ -114,7 +114,7 @@ When the project renders prompts (or any text) by `-replace`-ing `{{TOKEN}}` pla
 
 When a function changes the shape of an object it emits (`[pscustomobject]@{...}`, a returned hashtable, or `New-Object -Property @{...}`), callers in other files that still access the dropped property keep type-checking and parsing fine but break at runtime. The reviewer pre-computes pre/post emit shapes and walks the AST index for stale consumers; the diff-bug agent emits these as `PWSH-DIFF-201`.
 
-- `PWSH-DIFF-201` - the function consistently emitted property `X` before this change, never emits it now, and at least one caller in the index still reads `$result.X` (or `$result['X']`) by literal name. Severity `major`. Confidence 80 when both sides use literal property names; 60 with hedged wording when either side is dynamic.
+- `PWSH-DIFF-201` - the function consistently emitted property `X` before this change, never emits it now, and at least one caller in the index still reads `$result.X` (or `$result['X']`) by literal name. Severity `major`, confidence 80. In v1 the rule fires only on mechanically robust cases (literal consumer accesses against non-dynamic-key emit sites); dynamic property accesses and dynamic-key emit sites are not surfaced.
 
 Set `EnableShapeTracking = $false` in `.pwsh-review/config.psd1` to disable the check. Defaults to on.
 

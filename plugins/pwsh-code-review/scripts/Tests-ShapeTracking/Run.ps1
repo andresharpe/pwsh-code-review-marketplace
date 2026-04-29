@@ -141,9 +141,20 @@ $miniIndex = @{
     }
 }
 
-# Mimic the stale-consumer walk in Get-DiffContext.ps1.
+# Mimic the stale-consumer walk in Get-DiffContext.ps1, including the
+# emit-site-lines lookup that lets the agent cite emitter evidence.
 $dropped = $diff.properties_dropped
 $droppedLower = @($dropped | ForEach-Object { $_.ToLowerInvariant() })
+
+$emitSiteLinesByProp = @{}
+foreach ($site in $preEmits) {
+    foreach ($p in @($site.properties)) {
+        $key = $p.ToLowerInvariant()
+        if (-not $emitSiteLinesByProp.ContainsKey($key)) { $emitSiteLinesByProp[$key] = @() }
+        $emitSiteLinesByProp[$key] += $site.line
+    }
+}
+
 $staleConsumers = @()
 foreach ($callerRec in $miniIndex.callers_of['Get-Widget']) {
     $callerFile = $callerRec.file
@@ -155,13 +166,19 @@ foreach ($callerRec in $miniIndex.callers_of['Get-Widget']) {
     foreach ($consumerSite in @($callerFunc.consumes_shape)) {
         if ($consumerSite.via_call -ne 'Get-Widget') { continue }
         if ($consumerSite.dynamic) { continue }
-        if ($consumerSite.property.ToLowerInvariant() -notin $droppedLower) { continue }
+        $propLower = $consumerSite.property.ToLowerInvariant()
+        if ($propLower -notin $droppedLower) { continue }
+        $emitLines = @()
+        if ($emitSiteLinesByProp.ContainsKey($propLower)) {
+            $emitLines = @($emitSiteLinesByProp[$propLower] | Sort-Object -Unique)
+        }
         $staleConsumers += @{
             caller_function = $callerName
             caller_file     = $callerFile
             consumer_line   = $consumerSite.line
             property        = $consumerSite.property
             dynamic         = $consumerSite.dynamic
+            emit_site_lines = $emitLines
         }
     }
 }
@@ -172,6 +189,14 @@ Assert-True ('Use-Widget' -in $names) "Use-Widget caught"
 Assert-True ('Use-WidgetInline' -in $names) "Use-WidgetInline caught"
 Assert-True ('Use-WidgetIndex' -in $names) "Use-WidgetIndex caught"
 Assert-True ('Use-WidgetDynamic' -notin $names) "Use-WidgetDynamic excluded (dynamic access)"
+
+# Each stale-consumer record must carry emit_site_lines so the diff-bug
+# agent can cite the emitter in its evidence[]. The pre fixture's
+# pscustomobject literal opens at line 5.
+foreach ($sc in $staleConsumers) {
+    Assert-True ($sc.emit_site_lines.Count -ge 1) "$($sc.caller_function): emit_site_lines populated"
+    Assert-True ($sc.emit_site_lines[0] -eq 5) "$($sc.caller_function): emit_site_lines[0] points at pre-emitter line 5"
+}
 
 Write-Host ""
 if ($failures -eq 0) {
