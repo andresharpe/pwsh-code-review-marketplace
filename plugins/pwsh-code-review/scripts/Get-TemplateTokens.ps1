@@ -213,11 +213,46 @@ function Find-AssignmentInBlock {
     return $null
 }
 
+function Test-RhsObviouslyEmpty {
+    <#
+    Returns $true when an assignment RHS is statically an empty string
+    literal or `$null`. Used as a guard against the false-positive case
+    where the if/elseif branch overwrites the variable to nothing — we
+    must NOT treat such cases as "always non-empty".
+    #>
+    param([Parameter(Mandatory)]$Rhs)
+    # Unwrap PipelineAst / CommandExpressionAst layers.
+    if ($Rhs -is [System.Management.Automation.Language.PipelineAst] -and
+        $Rhs.PipelineElements.Count -eq 1) {
+        return Test-RhsObviouslyEmpty -Rhs $Rhs.PipelineElements[0]
+    }
+    if ($Rhs -is [System.Management.Automation.Language.CommandExpressionAst]) {
+        return Test-RhsObviouslyEmpty -Rhs $Rhs.Expression
+    }
+    if ($Rhs -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+        return [string]::IsNullOrEmpty($Rhs.Value)
+    }
+    if ($Rhs -is [System.Management.Automation.Language.ExpandableStringExpressionAst]) {
+        return [string]::IsNullOrEmpty($Rhs.Value)
+    }
+    if ($Rhs -is [System.Management.Automation.Language.VariableExpressionAst] -and
+        $Rhs.VariablePath.UserPath -eq 'null') {
+        return $true
+    }
+    return $false
+}
+
 function Test-IfStatementOverwritesNonEmpty {
     <#
     Returns $true when an IfStatementAst is exhaustive (has an else clause),
-    every clause assigns to $VarName, AND the else-branch's assignment RHS
-    is a non-empty string literal.
+    every clause assigns to $VarName, no clause assigns an obviously-empty
+    value (empty string literal or `$null`), AND the else-branch's
+    assignment RHS is a non-empty string literal.
+
+    The else-branch literal is the strong signal that the variable is
+    intended to be non-empty. The other clauses are accepted on faith
+    UNLESS they obviously assign empty — which would be a real false
+    positive (per Copilot review on PR #10).
     #>
     param(
         [Parameter(Mandatory)]$IfAst,
@@ -227,10 +262,13 @@ function Test-IfStatementOverwritesNonEmpty {
     if (-not $IfAst.ElseClause) { return $false }
 
     foreach ($pair in $IfAst.Clauses) {
-        if (-not (Find-AssignmentInBlock -Block $pair.Item2 -VarName $VarName)) { return $false }
+        $asn = Find-AssignmentInBlock -Block $pair.Item2 -VarName $VarName
+        if (-not $asn) { return $false }
+        if (Test-RhsObviouslyEmpty -Rhs $asn.Right) { return $false }
     }
     $elseAsn = Find-AssignmentInBlock -Block $IfAst.ElseClause -VarName $VarName
     if (-not $elseAsn) { return $false }
+    if (Test-RhsObviouslyEmpty -Rhs $elseAsn.Right) { return $false }
 
     return Test-AssignmentRhsAlwaysNonEmpty -Rhs $elseAsn.Right
 }

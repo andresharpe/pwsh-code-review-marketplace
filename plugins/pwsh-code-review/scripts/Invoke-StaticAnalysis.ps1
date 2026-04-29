@@ -253,19 +253,6 @@ try {
         }
     }
 
-    # 8. Template-substitution check (heuristic scan of `.md` for `{{TOKEN}}`
-    #    misuse — unknown tokens, dead "if {{X}} is empty" conditionals).
-    $tplScript = Join-Path $PSScriptRoot 'Test-TemplateSubstitution.ps1'
-    if (Test-Path $tplScript) {
-        $jobs += Start-ThreadJob -Name 'TemplateSubstitution' -ScriptBlock {
-            param($repoRoot, $script)
-            Push-Location $repoRoot
-            try {
-                , (& $script -RepoRoot $repoRoot)
-            } finally { Pop-Location }
-        } -ArgumentList $RepoRoot, $tplScript
-    }
-
     # 7. Test brittleness (heuristic AST scan over Pester / dotbot test files)
     $tbScript = Join-Path $PSScriptRoot 'Test-Brittleness.ps1'
     if (Test-Path $tbScript) {
@@ -286,6 +273,19 @@ try {
                 } finally { Pop-Location }
             } -ArgumentList $RepoRoot, $tbScope, $tbScript
         }
+    }
+
+    # 8. Template-substitution check (heuristic scan of `.md` for `{{TOKEN}}`
+    #    misuse — unknown tokens, dead "if {{X}} is empty" conditionals).
+    $tplScript = Join-Path $PSScriptRoot 'Test-TemplateSubstitution.ps1'
+    if (Test-Path $tplScript) {
+        $jobs += Start-ThreadJob -Name 'TemplateSubstitution' -ScriptBlock {
+            param($repoRoot, $script)
+            Push-Location $repoRoot
+            try {
+                , (& $script -RepoRoot $repoRoot)
+            } finally { Pop-Location }
+        } -ArgumentList $RepoRoot, $tplScript
     }
 
     # Wait for all

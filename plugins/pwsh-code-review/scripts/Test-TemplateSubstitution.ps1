@@ -42,18 +42,13 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 3.0
 
-# --- Rule table -------------------------------------------------------------
-
-$script:Rules = @{
-    'PWSH-TPL-001' = @{ Severity = 'Warning'; Confidence = 90 }   # major - mechanical
-    'PWSH-TPL-002-PROVABLE' = @{ Severity = 'Warning'; Confidence = 80 } # major - mechanical fallback
-    'PWSH-TPL-002-UNCERTAIN' = @{ Severity = 'Warning'; Confidence = 60 } # major - hedged
-}
-
 # Words that indicate "the substitution didn't render to a value" — the
 # whole class of dead-conditional bug. Each fires unless preceded by
-# "non-", "not ", or "no longer " (which inverts the check).
-$script:EmptyWordRegex = [regex]::new('(?i)(?<!non-|not\s|no\s+longer\s)\b(?:empty|missing|blank|absent|unset|undefined)\b')
+# "non-", "not ", or "no longer " (which inverts the check). Implemented
+# as a chain of fixed-length negative lookbehinds because .NET regex
+# only allowed fixed-length lookbehinds historically; this form is
+# portable across runtimes.
+$script:EmptyWordRegex = [regex]::new('(?i)(?<!non-)(?<!not\s)(?<!no\slonger\s)\b(?:empty|missing|blank|absent|unset|undefined)\b')
 
 # --- Scanner ---------------------------------------------------------------
 
@@ -217,18 +212,41 @@ try {
         } catch { }
     }
 
-    $files = @()
-    foreach ($g in $globs) {
-        $files += Get-ChildItem -Path $RepoRoot -Recurse -File -Filter (Split-Path $g -Leaf) `
-            -ErrorAction SilentlyContinue |
-            Where-Object {
-                $full = $_.FullName -replace '\\', '/'
-                $full -notmatch '/\.pwsh-review/' -and
-                $full -notmatch '/\.git/' -and
-                $full -notmatch '/node_modules/'
-            }
+    function Convert-ScanGlobToRegex {
+        # Converts a glob pattern (e.g. `core/prompts/**/*.md`) to a regex
+        # anchored to a relative path. Honours `**/` (any depth), `*` (any
+        # chars within a segment), and `?` (single char). Forward slashes.
+        param([Parameter(Mandatory)][string]$Glob)
+        $pattern = ($Glob -replace '\\', '/').TrimStart('./')
+        $pattern = [regex]::Escape($pattern)
+        $pattern = $pattern -replace '\\\*\\\*/', '(?:.*/)?'
+        $pattern = $pattern -replace '\\\*\\\*',   '.*'
+        $pattern = $pattern -replace '\\\*',       '[^/]*'
+        $pattern = $pattern -replace '\\\?',       '[^/]'
+        return '^' + $pattern + '$'
     }
-    $files = $files | Sort-Object FullName -Unique
+
+    $repoRootPrefix = ((Resolve-Path $RepoRoot).Path -replace '\\', '/').TrimEnd('/') + '/'
+    $globMatchers = @($globs | ForEach-Object {
+        [regex]::new((Convert-ScanGlobToRegex -Glob $_), [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    })
+
+    $files = Get-ChildItem -Path $RepoRoot -Recurse -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            $full = $_.FullName -replace '\\', '/'
+            if ($full -match '/\.pwsh-review/' -or
+                $full -match '/\.git/' -or
+                $full -match '/node_modules/') { return $false }
+            $relative = $full
+            if ($relative.StartsWith($repoRootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+                $relative = $relative.Substring($repoRootPrefix.Length)
+            }
+            foreach ($m in $globMatchers) {
+                if ($m.IsMatch($relative)) { return $true }
+            }
+            return $false
+        } |
+        Sort-Object FullName -Unique
 
     $findings = @()
     foreach ($f in $files) {
