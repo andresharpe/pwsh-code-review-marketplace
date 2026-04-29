@@ -1,16 +1,20 @@
-# Fixture for PWSH-TEST-001 (`.Count -ge|-eq <int>` with int > 5 in assertion).
-# Two positive cases: Pester `Should` and dotbot `Assert-True`.
+# Fixture for PWSH-TEST-001 (`.Count -ge|-eq <int>` with int > 5 inside an
+# assertion). Two positive cases: dotbot `Assert-True -Condition (...)` and
+# `... | Should -BeTrue` pipe form.
 
-Describe 'R1-Pester' {
-    It 'has many items' {
-        $items = 1..20
-        ($items.Count) | Should -BeGreaterOrEqual 8     # not a binary -ge expression — does NOT trip R1
-        $items.Count -ge 12                              # POSITIVE: standalone but inside It (still tests the rule)
+$items = 1..20
+
+Describe 'R1' {
+    It 'has many items - dotbot style' {
+        # POSITIVE: int > 5 inside Assert-True
+        Assert-True -Condition ($items.Count -ge 12)
+    }
+
+    It 'has many items - pester pipe' {
+        # POSITIVE: int > 5 piped into Should
+        ($items.Count -ge 8) | Should -BeTrue
     }
 }
 
-# Dotbot-style positive
-Assert-True -Condition ($items.Count -ge 8)
-
-# Negative: int <= 5
+# NEGATIVE: int <= 5 (below threshold)
 Assert-True -Condition ($items.Count -ge 3)

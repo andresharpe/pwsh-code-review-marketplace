@@ -50,16 +50,62 @@ $script:Rules = @{
     'PWSH-TEST-005' = @{ Severity = 'Warning';     Confidence = 90 }  # major
 }
 
-# Test-context anchors. A candidate AST node only fires a rule if it
-# sits inside one of these commands (Pester or dotbot conventions).
-$script:TestAnchorNames = @(
+# Test-block anchors. Used by R3 and R4, which check production-code
+# patterns (Sort|Unique pipelines, $hash.Keys access) that are bugs
+# inside any test scriptblock — not just inside the assertion call.
+$script:TestBlockAnchors = @(
     # Pester
     'Should', 'Describe', 'Context', 'It',
     'BeforeEach', 'AfterEach', 'BeforeAll', 'AfterAll'
-    # Dotbot helpers are matched by Assert-* prefix below
+    # Dotbot Assert-* helpers are matched by name prefix below.
 )
 
-function Test-IsInTestAssertion {
+function Test-IsInAssertion {
+    <#
+    Returns $true when the node is part of an assertion expression:
+      - a descendant of a `Should` or `Assert-*` CommandAst (e.g. the
+        argument to `Assert-True -Condition (...)`), OR
+      - a sibling in a pipeline whose downstream element is a
+        `Should` or `Assert-*` CommandAst (e.g. `$x | Should -Be 1`).
+      - the node itself is a `Should` or `Assert-*` CommandAst.
+    Used by R1 / R2 / R5, which flag the asserted expression itself.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        $Node
+    )
+    $cur = $Node
+    while ($null -ne $cur) {
+        if ($cur -is [System.Management.Automation.Language.CommandAst]) {
+            $name = $cur.GetCommandName()
+            if ($name) {
+                if ($name -eq 'Should') { return $true }
+                if ($name -like 'Assert-*') { return $true }
+            }
+        }
+        if ($cur -is [System.Management.Automation.Language.PipelineAst]) {
+            foreach ($el in $cur.PipelineElements) {
+                if ($el -is [System.Management.Automation.Language.CommandAst]) {
+                    $name = $el.GetCommandName()
+                    if ($name) {
+                        if ($name -eq 'Should') { return $true }
+                        if ($name -like 'Assert-*') { return $true }
+                    }
+                }
+            }
+        }
+        $cur = $cur.Parent
+    }
+    return $false
+}
+
+function Test-IsInTestBlock {
+    <#
+    Returns $true when the node is inside any test scriptblock — Pester
+    Describe/Context/It/Before*/After* or a Should/Assert-*. Used by R3
+    and R4, which flag production-code patterns that are bugs even when
+    the assertion sits at a different point in the script.
+    #>
     param(
         [Parameter(Mandatory)]
         $Node
@@ -69,7 +115,7 @@ function Test-IsInTestAssertion {
         if ($cur -is [System.Management.Automation.Language.CommandAst]) {
             $name = $cur.GetCommandName()
             if ($name) {
-                if ($script:TestAnchorNames -contains $name) { return $true }
+                if ($script:TestBlockAnchors -contains $name) { return $true }
                 if ($name -like 'Assert-*') { return $true }
             }
         }
@@ -174,7 +220,7 @@ function Test-Rule001 {
     if ($right -isnot [System.Management.Automation.Language.ConstantExpressionAst]) { return $null }
     if ($right.Value -isnot [int]) { return $null }
     if ($right.Value -le 5) { return $null }
-    if (-not (Test-IsInTestAssertion -Node $Node)) { return $null }
+    if (-not (Test-IsInAssertion -Node $Node)) { return $null }
 
     $opSym = if ($op -eq [System.Management.Automation.Language.TokenKind]::Ige) { '-ge' } else { '-eq' }
     $msg = "Brittle assertion: ``.Count $opSym $($right.Value)`` couples the test to the exact data size. Assert on a property of the data instead, or use a relative bound."
@@ -228,7 +274,7 @@ function Test-Rule002 {
 
     if (-not (Test-IsMultilineRegex -Pattern $pattern)) { return $null }
     if (-not $leftAst) { return $null }
-    if (-not (Test-IsInTestAssertion -Node $Node)) { return $null }
+    if (-not (Test-IsInAssertion -Node $Node)) { return $null }
 
     # Does the left expression descend from a multi-line cmdlet?
     $cmds = Get-CommandsInExpression -Ast $leftAst
@@ -363,13 +409,10 @@ function Test-Rule003 {
     }
 
     if (-not $hasOrderedConsumer) { return $null }
-    if (-not (Test-IsInTestAssertion -Node $Node)) {
-        # The pipeline itself may be inside a setup; what matters is whether
-        # the consumer is in test context. Walk to the consumer's nearest
-        # ancestor and check there. Conservative: require the pipeline to be
-        # inside a test-anchor command.
-        return $null
-    }
+    # R3 fires when the brittle pipeline lives inside any test scriptblock —
+    # the bug is the consumer's order assumption, but the pipeline itself
+    # rarely sits inside the assertion call. Use the broader anchor.
+    if (-not (Test-IsInTestBlock -Node $Node)) { return $null }
 
     $msg = "``Sort-Object | Get-Unique`` followed by an ordered comparison. The sort destroys the original order; the assertion now tests the sort, not the production code."
     return (New-Finding -Rule 'PWSH-TEST-003' -File $RelativePath `
@@ -447,7 +490,10 @@ function Test-Rule004 {
     else { return $null }
 
     if (-not $matched) { return $null }
-    if (-not (Test-IsInTestAssertion -Node $Node)) { return $null }
+    # R4 fires when the brittle access lives inside any test scriptblock —
+    # the bug is the test's order assumption, even when the access is in
+    # setup code that feeds a downstream assertion.
+    if (-not (Test-IsInTestBlock -Node $Node)) { return $null }
 
     $msg = "Ordered access on a hashtable's ``.Keys`` (``[N]`` or ``Select-Object -First/-Last/-Index``). Hashtable key enumeration order is unspecified — the assertion may pass or fail without the production code changing."
     return (New-Finding -Rule 'PWSH-TEST-004' -File $RelativePath `
@@ -487,7 +533,7 @@ function Test-Rule005 {
 
     if (-not $pattern) { return $null }
     if (-not (Test-IsWindowsPathRegex -Pattern $pattern)) { return $null }
-    if (-not (Test-IsInTestAssertion -Node $Node)) { return $null }
+    if (-not (Test-IsInAssertion -Node $Node)) { return $null }
 
     $msg = "Windows-only path regex (literal ``\\`` and no forward slash). This assertion will fail on Linux/macOS CI. Use ``[IO.Path]::DirectorySeparatorChar`` or normalise the path before matching."
     return (New-Finding -Rule 'PWSH-TEST-005' -File $RelativePath `
@@ -533,6 +579,13 @@ function Invoke-FileScan {
         return @()
     }
     if (-not $ast) { return @() }
+    # `ParseFile` can return a usable-looking AST even when it logged
+    # non-terminating parse errors. Skip the file rather than risk
+    # misleading findings from a partly-parsed tree.
+    if ($errs -and @($errs).Count -gt 0) {
+        Write-Warning "Test-Brittleness: $(@($errs).Count) parse error(s) in $FilePath - skipping"
+        return @()
+    }
 
     $rel = Get-RelativePath -Path $FilePath -Root $RepoRoot
     $findings = @()

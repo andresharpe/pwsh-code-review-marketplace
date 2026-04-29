@@ -233,7 +233,13 @@ try {
     [void]$sb.AppendLine("- InjectionHunter: $(@($static.injection_hunter).Count) finding(s)")
     [void]$sb.AppendLine("- Gitleaks: $(@($static.gitleaks).Count) finding(s)")
     if ($static.ContainsKey('test_brittleness')) {
-        [void]$sb.AppendLine("- Test brittleness: $(@($static.test_brittleness).Count) finding(s)")
+        $tbRaw  = @($static.test_brittleness).Count
+        $tbKept = @($passedStaticHeuristic).Count
+        if ($tbRaw -eq $tbKept) {
+            [void]$sb.AppendLine("- Test brittleness: $tbRaw finding(s)")
+        } else {
+            [void]$sb.AppendLine("- Test brittleness: $tbRaw raw, $tbKept post-filter")
+        }
     }
     if ($static.pester -and $static.pester.ran) {
         [void]$sb.AppendLine("- Pester: $($static.pester.passed)/$($static.pester.total) passed, $($static.pester.failed) failed")

@@ -269,7 +269,7 @@ try {
                 param($repoRoot, $scope, $script)
                 Push-Location $repoRoot
                 try {
-                    , @(& $script -RepoRoot $repoRoot -Path $scope)
+                    , (& $script -RepoRoot $repoRoot -Path $scope)
                 } finally { Pop-Location }
             } -ArgumentList $RepoRoot, $tbScope, $tbScript
         }
