@@ -221,6 +221,7 @@ try {
     Platforms           = @($platformsList)
     SkipAgents          = @()
     StaticAnalysisOnly  = `$false
+    EnableShapeTracking = `$true
 }
 "@
         $configContent | Set-Content $configPath -Encoding utf8NoBOM

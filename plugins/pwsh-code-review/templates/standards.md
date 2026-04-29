@@ -110,6 +110,14 @@ When the project renders prompts (or any text) by `-replace`-ing `{{TOKEN}}` pla
 - `PWSH-TPL-001` - the markdown references a `{{TOKEN}}` that has no `-replace` rule anywhere in the repo. The runtime will leave the literal placeholder in the rendered output. Either fix the typo or add a substitution rule.
 - `PWSH-TPL-002` - prose conditional that the substitution will never satisfy: text near a `{{X}}` reference says "if `{{X}}` is empty / missing / blank / absent / not set". When `X` is provably always non-empty (the `-replace` source declares an explicit fallback), the conditional is dead code (confidence 80). When `X`'s emptiness is uncertain, the finding is hedged (confidence 60).
 
+### Cross-module data shapes
+
+When a function changes the shape of an object it emits (`[pscustomobject]@{...}`, a returned hashtable, or `New-Object -Property @{...}`), callers in other files that still access the dropped property keep type-checking and parsing fine but break at runtime. The reviewer pre-computes pre/post emit shapes and walks the AST index for stale consumers; the diff-bug agent emits these as `PWSH-DIFF-201`.
+
+- `PWSH-DIFF-201` - the function consistently emitted property `X` before this change, never emits it now, and at least one caller in the index still reads `$result.X` (or `$result['X']`) by literal name. Severity `major`, confidence 80. In v1 the rule fires only on mechanically robust cases (literal consumer accesses against non-dynamic-key emit sites); dynamic property accesses and dynamic-key emit sites are not surfaced.
+
+Set `EnableShapeTracking = $false` in `.pwsh-review/config.psd1` to disable the check. Defaults to on.
+
 ## Module manifests
 
 - `FunctionsToExport` lists the actual exports (no `'*'`).
