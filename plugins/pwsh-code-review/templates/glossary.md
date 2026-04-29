@@ -48,3 +48,41 @@ Tips when curating this file:
 
 - Cross-link related terms so the reviewer understands the term cluster.
 -->
+
+## Project-specific declarations
+
+These optional sub-sections let the reviewer recognise project-specific
+conventions that the agent fleet looks up by convention.
+
+### LLM output types
+
+If your project wraps LLM (Claude, OpenAI, Gemini, etc.) output in a typed
+result and threads it through `[OutputType()]`, declare the type names
+here. The security agent treats values typed with these declarations as
+untrusted input under `PWSH-SEC-040..042`.
+
+```markdown
+### LLM result types
+
+- `LlmResponse` - return type of `Invoke-Claude`, `Invoke-OpenAI`. Carries
+  prompt-influenced text; treat as untrusted.
+- `ClaudeMessage` - return type of `Get-ClaudeReply`. Same.
+```
+
+If you do not declare any, the security agent falls back to its built-in
+heuristics (CLI names, common LLM endpoints, variable-name patterns).
+
+### LLM endpoints
+
+Optionally list URI fragments the security agent should treat as LLM
+endpoints when scanning `Invoke-RestMethod` / `Invoke-WebRequest` calls.
+The agent ships with the obvious ones (`api.anthropic.com`,
+`api.openai.com`, ...); declare any internal proxy or self-hosted
+inference endpoints here.
+
+```markdown
+### LLM endpoints
+
+- `internal-llm.example.com/v1/chat` - corporate Claude proxy.
+- `127.0.0.1:11434` - local Ollama server.
+```

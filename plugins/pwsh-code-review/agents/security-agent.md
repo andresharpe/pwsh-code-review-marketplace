@@ -82,13 +82,32 @@ You do **not** own:
 
 ### Untrusted input flow
 
-Trace input from sources to sinks. Sources: `param()` blocks of public functions, `Read-Host`, file reads, env vars, network responses, command-line args. Sinks: `Invoke-Expression`, native command invocation, file writes outside sandboxed paths, SQL, LDAP, web requests.
+Trace input from sources to sinks. Sources: `param()` blocks of public functions, `Read-Host`, file reads, env vars, network responses, command-line args, **and LLM output** (see below). Sinks: `Invoke-Expression`, native command invocation, file writes outside sandboxed paths, SQL, LDAP, web requests.
 
 - Untrusted source flows to `Invoke-Expression`: flag (`blocker`, conf 100).
 - Untrusted source flows to `& $exe ...` without array form: flag (`blocker`, conf 90).
 - Untrusted source flows to file write path (e.g. `Set-Content -Path $userPath`): flag (`major`, conf 85). Path traversal risk. Recommend `Resolve-Path -LiteralPath` and prefix-check.
 - Untrusted source flows to `Remove-Item`: flag (`blocker`, conf 95). Especially with `-Recurse`.
 - Untrusted source flows to `New-Item -ItemType SymbolicLink`: flag (`blocker`, conf 95). Symlink attacks.
+
+### LLM output as untrusted input
+
+Output from a language model is attacker-controlled by default — the prompt can be manipulated by anything that flows into it (file contents, web pages, prior turns of a conversation, tool results). Treat any value that originated from an LLM as untrusted input even when the call site looks innocuous.
+
+LLM-output sources to recognise (case-insensitive):
+
+- Direct CLI invocations: `claude`, `claude-code`, `gh copilot`, `aider`, `codex`, `gemini` (and similar LLM CLIs).
+- HTTP calls to known LLM endpoints: `Invoke-RestMethod` / `Invoke-WebRequest` against URIs containing `api.anthropic.com`, `api.openai.com`, `api.cohere.ai`, `generativelanguage.googleapis.com`, `inference.huggingface.co`, or any URI string the project's `glossary.md` declares as an LLM endpoint.
+- Functions whose `[OutputType()]` declares an LLM-result type. The project may declare its own type in `glossary.md` (e.g. `LlmResponse`, `ClaudeResult`); read the glossary before deciding.
+- Anything assigned from a variable named `$llm*`, `$claude*`, `$copilot*`, `$completion`, `$response.choices`, `$response.content` where the surrounding code makes the LLM-origin obvious. This is a heuristic; downgrade to `major` if you cannot confirm the origin.
+
+Rules:
+
+- `PWSH-SEC-040` - LLM output flows to `Invoke-Expression`, `iex`, or `& ([scriptblock]::Create($llm))`: flag (`blocker`, conf 90). Prompt injection -> arbitrary code execution. The "trusted operator only" framing does not survive any source of untrusted text in the prompt context.
+- `PWSH-SEC-041` - LLM output flows to a native command argument as a single concatenated string (e.g. `& git $llmOutput`, `cmd /c $llmCommand`): flag (`blocker`, conf 90). Same threat model as `PWSH-SEC-040` — argument-shape injection.
+- `PWSH-SEC-042` - LLM output flows to a file-write path (`Set-Content -Path $llmPath`, `Out-File`, `New-Item -Path $llmName`): flag (`major`, conf 85). Path traversal and arbitrary-file-write risk. Recommend prefix-checking the resolved path against an allowlist of writable roots.
+
+Cite the LLM source and the sink in `evidence[]`. Severity caps at `major` if you cannot point to the source line.
 
 ### Secrets in code
 

@@ -66,6 +66,7 @@ These are the pwsh traps that cause real bugs in production. Memorise them.
 - New `$script:` variable in a public function: flag (`major`, conf 85). Suggest passing as parameter or returning.
 - New `$global:` anywhere: flag (`blocker`, conf 95) unless it is a documented global (check `standards.md`).
 - Variable read inside a function but never written and not a parameter: flag (`major`, conf 80). Probably parent-scope contamination.
+- Function reads a `$global:` or `$script:` variable without first asserting it is set (no `Test-Path Variable:` / `if ($null -ne $global:X)` / `Get-Variable -ErrorAction SilentlyContinue` guard): flag (`major`, conf 75). Common pattern in test-only initialisation that ships to prod — the function works in tests because the suite seeds the variable, then crashes in real use because nothing seeds it. Cite the read site and confirm there is no enclosing guard. Drop to `minor` if the variable is declared at module scope in the same file (`$script:X = ...`) earlier than the read.
 
 ### Cross-platform
 
