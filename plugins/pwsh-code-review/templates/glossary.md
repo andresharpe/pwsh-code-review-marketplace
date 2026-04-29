@@ -54,12 +54,15 @@ Tips when curating this file:
 These optional sub-sections let the reviewer recognise project-specific
 conventions that the agent fleet looks up by convention.
 
-### LLM output types
+### LLM result types
 
 If your project wraps LLM (Claude, OpenAI, Gemini, etc.) output in a typed
 result and threads it through `[OutputType()]`, declare the type names
 here. The security agent treats values typed with these declarations as
-untrusted input under `PWSH-SEC-040..042`.
+untrusted input under `PWSH-SEC-040..042`. Use the heading `### LLM
+result types` exactly so the agent can find the section by convention.
+
+Worked example:
 
 ```markdown
 ### LLM result types

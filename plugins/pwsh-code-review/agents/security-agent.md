@@ -98,16 +98,19 @@ LLM-output sources to recognise (case-insensitive):
 
 - Direct CLI invocations: `claude`, `claude-code`, `gh copilot`, `aider`, `codex`, `gemini` (and similar LLM CLIs).
 - HTTP calls to known LLM endpoints: `Invoke-RestMethod` / `Invoke-WebRequest` against URIs containing `api.anthropic.com`, `api.openai.com`, `api.cohere.ai`, `generativelanguage.googleapis.com`, `inference.huggingface.co`, or any URI string the project's `glossary.md` declares as an LLM endpoint.
-- Functions whose `[OutputType()]` declares an LLM-result type. The project may declare its own type in `glossary.md` (e.g. `LlmResponse`, `ClaudeResult`); read the glossary before deciding.
-- Anything assigned from a variable named `$llm*`, `$claude*`, `$copilot*`, `$completion`, `$response.choices`, `$response.content` where the surrounding code makes the LLM-origin obvious. This is a heuristic; downgrade to `major` if you cannot confirm the origin.
+- Functions whose `[OutputType()]` declares an LLM-result type. The project may declare its own type in `glossary.md` under a `### LLM result types` heading (e.g. `LlmResponse`, `ClaudeResult`); read the glossary before deciding.
+- Variables whose name matches `$llm*`, `$claude*`, `$copilot*`, `$completion`, or `$prompt*` where the assignment makes the LLM origin obvious.
+- Property access on a JSON-shaped response that matches the OpenAI / Anthropic / Gemini reply shapes — `.choices[*].message.content`, `.choices[*].text`, `.content[*].text`, `.candidates[*].content.parts[*].text`, `.completion`. Treat the accessed string as untrusted at the access site.
+
+These are heuristics; if you cannot pin the LLM origin to a specific source (CLI invocation, HTTP call, declared type), severity caps at `minor`.
 
 Rules:
 
 - `PWSH-SEC-040` - LLM output flows to `Invoke-Expression`, `iex`, or `& ([scriptblock]::Create($llm))`: flag (`blocker`, conf 90). Prompt injection -> arbitrary code execution. The "trusted operator only" framing does not survive any source of untrusted text in the prompt context.
-- `PWSH-SEC-041` - LLM output flows to a native command argument as a single concatenated string (e.g. `& git $llmOutput`, `cmd /c $llmCommand`): flag (`blocker`, conf 90). Same threat model as `PWSH-SEC-040` — argument-shape injection.
+- `PWSH-SEC-041` - LLM output reaches a shell or native command in a form the OS shell will re-parse for word-splitting, quoting, or metacharacters: `cmd /c $llmCommand`, `bash -c $llmCommand`, `& $exe ($prefix + $llmOutput)` (string concatenation into one argument), `Start-Process -ArgumentList $llmOutput`: flag (`blocker`, conf 90). Argument-shape injection. The safe pattern is array-form argument passing where each LLM-derived string is its own array element and the executable is fixed.
 - `PWSH-SEC-042` - LLM output flows to a file-write path (`Set-Content -Path $llmPath`, `Out-File`, `New-Item -Path $llmName`): flag (`major`, conf 85). Path traversal and arbitrary-file-write risk. Recommend prefix-checking the resolved path against an allowlist of writable roots.
 
-Cite the LLM source and the sink in `evidence[]`. Severity caps at `major` if you cannot point to the source line.
+Cite the LLM source and the sink in `evidence[]`. Per the section-level cap above, severity drops to `minor` if you cannot pin the source.
 
 ### Secrets in code
 
