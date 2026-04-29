@@ -123,6 +123,7 @@ For each signature change, enumerate call sites from `diff-context.json` and lis
 - New conditional branch (`if`/`elseif`/`switch` case) without a corresponding new test case: flag (`major`, conf 75). Verify by reading the linked Pester tests in `diff-context.json.tests`.
 - Test added that mocks the function under test: flag (`major`, conf 90). Tests should mock dependencies, not subjects.
 - Test added with no `Should` assertion: flag (`major`, conf 95).
+- Test asserts on `.Count -ge N`, sorted-then-indexed output, hashtable-key order, multi-line regex against cmdlet output, or a Windows-only path regex: out of scope for you. The static layer flags these as `PWSH-TEST-001` through `PWSH-TEST-005`. Do not re-flag.
 
 ## Output
 

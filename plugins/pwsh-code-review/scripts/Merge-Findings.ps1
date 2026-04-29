@@ -62,7 +62,7 @@ try {
     $static = if (Test-Path $staticPath) {
         Get-Content $staticPath -Raw | ConvertFrom-Json -AsHashtable
     } else {
-        @{ psscriptanalyzer = @(); compatibility = @(); injection_hunter = @(); gitleaks = @(); pester = $null; markdownlint = @(); tools_missing = @() }
+        @{ psscriptanalyzer = @(); compatibility = @(); injection_hunter = @(); gitleaks = @(); pester = $null; markdownlint = @(); test_brittleness = @(); tools_missing = @() }
     }
 
     # Load calibrated agent findings
@@ -84,17 +84,20 @@ try {
 
     $staticAsFindings = @()
 
-    # PSScriptAnalyzer & Compatibility
-    foreach ($cat in @('psscriptanalyzer', 'compatibility', 'injection_hunter')) {
+    # PSScriptAnalyzer & Compatibility & InjectionHunter & TestBrittleness
+    foreach ($cat in @('psscriptanalyzer', 'compatibility', 'injection_hunter', 'test_brittleness')) {
         foreach ($f in @($static[$cat])) {
             if (-not $f) { continue }
             $sev = $staticToOur[$f.severity] ?? 'minor'
             if ($cat -eq 'injection_hunter') { $sev = 'blocker' }
+            # Heuristic sources carry a per-finding `confidence` field; deterministic
+            # sources are 100 by default.
+            $conf = if ($cat -eq 'test_brittleness' -and $f.confidence) { [int]$f.confidence } else { 100 }
             $staticAsFindings += [ordered]@{
                 source     = $cat
                 agent      = 'static'
                 severity   = $sev
-                confidence = 100
+                confidence = $conf
                 rule       = $f.rule_name
                 file       = $f.file
                 line_start = $f.line
@@ -139,6 +142,14 @@ try {
     }
 
     $passedAgent = @($agentFindings | Where-Object { Test-Pass $_.severity $_.confidence })
+
+    # Heuristic static findings (test_brittleness) carry per-rule confidence and
+    # must flow through the same filter matrix as agent findings.
+    $passedStaticHeuristic = @($staticAsFindings | Where-Object {
+        $_.source -eq 'test_brittleness' -and (Test-Pass $_.severity $_.confidence)
+    })
+    $deterministicStatic = @($staticAsFindings | Where-Object { $_.source -ne 'test_brittleness' })
+    $staticAsFindings = $deterministicStatic + $passedStaticHeuristic
 
     # ---- Cap nits and praises ----
 
@@ -221,6 +232,9 @@ try {
     [void]$sb.AppendLine("- PSScriptAnalyzer: $pssaCount finding(s)")
     [void]$sb.AppendLine("- InjectionHunter: $(@($static.injection_hunter).Count) finding(s)")
     [void]$sb.AppendLine("- Gitleaks: $(@($static.gitleaks).Count) finding(s)")
+    if ($static.ContainsKey('test_brittleness')) {
+        [void]$sb.AppendLine("- Test brittleness: $(@($static.test_brittleness).Count) finding(s)")
+    }
     if ($static.pester -and $static.pester.ran) {
         [void]$sb.AppendLine("- Pester: $($static.pester.passed)/$($static.pester.total) passed, $($static.pester.failed) failed")
     } else {
@@ -240,29 +254,36 @@ try {
         [void]$sb.AppendLine()
 
         foreach ($f in $section) {
+            # Optional keys via indexer to avoid strict-mode throws when the
+            # finding (e.g. a static one) does not carry agent-only fields.
+            $consequence = $f['consequence']
+            $fix         = $f['fix']
+            $fixSnippet  = $f['fix_snippet']
+            $isStatic    = [bool]$f['static']
+            $rule        = if ($f['rule']) { " [$($f['rule'])]" } else { '' }
+
             $line = if ($f.line_start -eq $f.line_end -or -not $f.line_end) { "$($f.line_start)" }
                     else { "$($f.line_start)-$($f.line_end)" }
-            $confDisplay = if ($f.static) { 'static' } else { "$($f.confidence)" }
-            $rule = if ($f.rule) { " [$($f.rule)]" } else { '' }
+            $confDisplay = if ($isStatic) { 'static' } else { "$($f.confidence)" }
 
             [void]$sb.AppendLine("**[$sev] ($confDisplay) ``$($f.file):$line``**$rule")
             [void]$sb.AppendLine()
             [void]$sb.AppendLine($f.message)
             [void]$sb.AppendLine()
 
-            if ($f.consequence) {
-                [void]$sb.AppendLine($f.consequence)
+            if ($consequence) {
+                [void]$sb.AppendLine($consequence)
                 [void]$sb.AppendLine()
             }
 
-            if ($f.fix) {
-                [void]$sb.AppendLine("Fix: $($f.fix)")
+            if ($fix) {
+                [void]$sb.AppendLine("Fix: $fix")
                 [void]$sb.AppendLine()
             }
 
-            if ($f.fix_snippet) {
+            if ($fixSnippet) {
                 [void]$sb.AppendLine('```powershell')
-                [void]$sb.AppendLine($f.fix_snippet)
+                [void]$sb.AppendLine($fixSnippet)
                 [void]$sb.AppendLine('```')
                 [void]$sb.AppendLine()
             }
@@ -283,11 +304,11 @@ try {
 
     [pscustomobject]@{
         OutputPath           = $OutputPath
-        TotalFindings        = $sorted.Count
+        TotalFindings        = @($sorted).Count
         Counts               = $counts
-        StaticFindings       = $staticAsFindings.Count
-        AgentFindingsRaw     = $agentFindings.Count
-        AgentFindingsKept    = $clustered.Count
+        StaticFindings       = @($staticAsFindings).Count
+        AgentFindingsRaw     = @($agentFindings).Count
+        AgentFindingsKept    = @($clustered).Count
         ConfidenceThreshold  = $ConfidenceThreshold
         NitCap               = $NitCap
     }

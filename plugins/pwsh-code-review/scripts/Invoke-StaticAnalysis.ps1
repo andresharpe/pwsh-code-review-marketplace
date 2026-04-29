@@ -253,6 +253,28 @@ try {
         }
     }
 
+    # 7. Test brittleness (heuristic AST scan over Pester / dotbot test files)
+    $tbScript = Join-Path $PSScriptRoot 'Test-Brittleness.ps1'
+    if (Test-Path $tbScript) {
+        $tbScope = if ($All) {
+            @($RepoRoot)
+        } else {
+            @($scopePaths | Where-Object {
+                $leaf = Split-Path $_ -Leaf
+                $_ -match '\.Tests\.ps1$' -or $leaf -like 'Test-*.ps1'
+            })
+        }
+        if ($tbScope) {
+            $jobs += Start-ThreadJob -Name 'TestBrittleness' -ScriptBlock {
+                param($repoRoot, $scope, $script)
+                Push-Location $repoRoot
+                try {
+                    , @(& $script -RepoRoot $repoRoot -Path $scope)
+                } finally { Pop-Location }
+            } -ArgumentList $RepoRoot, $tbScope, $tbScript
+        }
+    }
+
     # Wait for all
     $results = $jobs | Wait-Job | ForEach-Object {
         $name = $_.Name
@@ -271,6 +293,7 @@ try {
         gitleaks          = @()
         pester            = $null
         markdownlint      = @()
+        test_brittleness  = @()
         tools_missing     = @()
     }
 
@@ -308,6 +331,17 @@ try {
             'Gitleaks'        { $aggregate.gitleaks = @($r.Value) }
             'Pester'          { $aggregate.pester = $r.Value }
             'Markdownlint'    { $aggregate.markdownlint = @($r.Value) }
+            'TestBrittleness' { $aggregate.test_brittleness = @($r.Value | ForEach-Object {
+                @{
+                    rule_name  = $_.rule_name
+                    severity   = $_.severity
+                    file       = $_.file
+                    line       = $_.line
+                    column     = $_.column
+                    message    = $_.message
+                    confidence = $_.confidence
+                }
+            }) }
         }
     }
 
@@ -321,13 +355,14 @@ try {
     $aggregate | ConvertTo-Json -Depth 20 | Set-Content $outputPath -Encoding utf8NoBOM
 
     [pscustomobject]@{
-        OutputPath          = $outputPath
-        PSSAFindings        = $aggregate.psscriptanalyzer.Count
-        CompatibilityIssues = $aggregate.compatibility.Count
-        InjectionFindings   = $aggregate.injection_hunter.Count
-        GitleaksFindings    = $aggregate.gitleaks.Count
-        PesterFailed        = if ($aggregate.pester) { $aggregate.pester.failed } else { 'not-run' }
-        ToolsMissing        = $aggregate.tools_missing
+        OutputPath              = $outputPath
+        PSSAFindings            = $aggregate.psscriptanalyzer.Count
+        CompatibilityIssues     = $aggregate.compatibility.Count
+        InjectionFindings       = $aggregate.injection_hunter.Count
+        GitleaksFindings        = $aggregate.gitleaks.Count
+        TestBrittlenessFindings = $aggregate.test_brittleness.Count
+        PesterFailed            = if ($aggregate.pester) { $aggregate.pester.failed } else { 'not-run' }
+        ToolsMissing            = $aggregate.tools_missing
     }
 } finally {
     Pop-Location
