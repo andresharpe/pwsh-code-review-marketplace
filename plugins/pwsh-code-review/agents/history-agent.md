@@ -45,7 +45,7 @@ For each changed file:
 
 Once per review (not per file):
 
-3. `git log -1 --format=%B HEAD` — capture the HEAD commit's full message (subject + body). Used by the "Conventional commits" patterns below.
+3. `git log -1 --format=%B HEAD` — capture the HEAD commit's full message. Split it into **subject** (the first line, before the first blank line) and **body** (everything after the first blank line, if any). The conventional-commits patterns below are explicit about which part each check reads — do not let body text satisfy a "subject contains …" rule, or vice versa.
 4. `git rev-list --count <base>..HEAD` — count commits ahead of base. If the count is greater than 1, skip the conventional-commits patterns entirely; the squash-merge subject will land later and the HEAD commit is unlikely to summarise the full diff.
 
 If no file has any signal-word match in its recent commits and the conventional-commits patterns produce nothing, you are done. Emit `[]` and return.
@@ -54,9 +54,9 @@ If no file has any signal-word match in its recent commits and the conventional-
 
 For each file whose Phase 1 surfaced a signal commit:
 
-3. `git show --stat <suspect-sha>` to confirm the suspect commit touched the same lines this diff touches.
-4. `git blame -L <line>,<line> -- <file>` only for the specific changed-line ranges that overlap the suspect commit.
-5. Read the suspect commit message in full (`git log -1 <sha>`). The body is where the load-bearing context lives.
+1. `git show --stat <suspect-sha>` to confirm the suspect commit touched the same lines this diff touches.
+2. `git blame -L <line>,<line> -- <file>` only for the specific changed-line ranges that overlap the suspect commit.
+3. Read the suspect commit message in full (`git log -1 <sha>`). The body is where the load-bearing context lives.
 
 ### Hard stops
 
@@ -115,11 +115,16 @@ For each file whose Phase 1 surfaced a signal commit:
 
 These rules correlate the HEAD commit's subject with the actual diff to catch mismatches that confuse `git log` archaeology and break SemVer-driven release tooling. Run only when `git rev-list --count <base>..HEAD` returned 1 (single-commit branch); otherwise skip — multi-commit branches will be squashed and the squash message lands later.
 
-Recognise a Conventional Commits subject by the regex `^(feat|fix|chore|docs|test|refactor|perf|build|ci|style|revert)(\([^)]+\))?(!)?:\s+\S`. If the HEAD subject does not match this shape, skip the patterns below — the project may not follow the convention.
+Recognise a Conventional Commits **subject** by the regex `^(feat|fix|chore|docs|test|refactor|perf|build|ci|style|revert)(\([^)]+\))?(!)?:\s+\S`. If the HEAD subject does not match this shape, skip the patterns below — the project may not follow the convention.
 
-- `feat:` subject but the diff exports no new public function and adds no new public parameter: flag (`question`, conf 70). To verify, check the diff for additions to a `.psd1` manifest's `FunctionsToExport`, new `function` definitions in `Public/` directories, and new `[Parameter()]` declarations on existing public functions. The commit claims a feature; reviewers should confirm what user-visible capability was added. Skip if the diff body of an existing public function expands its behaviour in a way that is plausibly feature-shaped (e.g. a new branch reachable through an existing parameter).
+- `feat:` subject but the diff exports no new public function and adds no new public parameter: flag (`question`, conf 70). To verify, check the diff for: additions to a `.psd1` manifest's `FunctionsToExport`, new `Export-ModuleMember -Function ...` calls in a `.psm1`, new `function` definitions in `Public/` directories, and new `[Parameter()]` declarations on existing public functions. The commit claims a feature; reviewers should confirm what user-visible capability was added. Skip if the diff body of an existing public function expands its behaviour in a way that is plausibly feature-shaped (e.g. a new branch reachable through an existing parameter).
 - `fix:` subject but the diff only touches markdown, comments, CBH blocks, or test fixtures (no source-code change to a function body): flag (`question`, conf 70). The commit claims a bug fix; the diff fixes nothing executable. Often a stale subject from a rename or a commit-message error.
-- `PWSH-HIST-010` — the diff removes an entry from a module manifest's `FunctionsToExport` array, narrows a public parameter's type (e.g. `[object]` → `[string]`), removes a public parameter, or adds `[Parameter(Mandatory)]` to a public parameter, AND the HEAD subject contains neither `BREAKING` nor a `!` after the type/scope: flag (`major`, conf 80). SemVer tooling will not bump major; downstream consumers will get a silent break. The fix is either to add `!` (`fix(api)!: ...`) or a `BREAKING CHANGE:` trailer.
+- `PWSH-HIST-010` — the diff removes an entry from a module manifest's `FunctionsToExport` array, drops a `Function` from `Export-ModuleMember -Function ...`, narrows a public parameter's type (e.g. `[object]` → `[string]`), removes a public parameter, or adds `[Parameter(Mandatory)]` to a public parameter, AND **none** of the following are present:
+  - the subject contains `!` immediately before the colon (e.g. `feat(api)!:`),
+  - the body has a line matching `^BREAKING CHANGE:\s` (the conventional-commits trailer),
+  - the body has a line matching `^BREAKING-CHANGE:\s` (hyphenated variant some tools accept).
+
+  Flag (`major`, conf 80). SemVer tooling will not bump major; downstream consumers will get a silent break. The fix is either to add `!` to the subject or to add a `BREAKING CHANGE:` trailer paragraph in the body. Cite both the diff hunk that constitutes the break and the HEAD subject in `evidence[]`.
 
 Cap conventional-commits findings at **one per review**. If multiple subject/diff mismatches are present, pick the highest-severity one and emit a single finding citing the others in the body.
 
