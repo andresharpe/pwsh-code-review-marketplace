@@ -66,6 +66,7 @@ These are the pwsh traps that cause real bugs in production. Memorise them.
 - New `$script:` variable in a public function: flag (`major`, conf 85). Suggest passing as parameter or returning.
 - New `$global:` anywhere: flag (`blocker`, conf 95) unless it is a documented global (check `standards.md`).
 - Variable read inside a function but never written and not a parameter: flag (`major`, conf 80). Probably parent-scope contamination.
+- Function reads a `$global:` or `$script:` variable without a presence guard: flag (`major`, conf 75). Common pattern in test-only initialisation that ships to prod — the function works in tests because the suite seeds the variable, then crashes in real use because nothing seeds it. Acceptable presence guards are checks that do not dereference the variable: `Test-Path Variable:global:X` / `Test-Path Variable:script:X`, or `Get-Variable -Name X -Scope Global -ErrorAction SilentlyContinue`. A `$null`-comparison such as `if ($null -ne $global:X)` is **not** a guard under `Set-StrictMode -Version 3.0` because the dereference itself throws when the variable is not set. Do **not** flag if the variable is initialised at module/script scope in the same file (e.g. `$script:X = ...` outside any function) earlier than the function — that is a real presence guarantee, not a test-only seed.
 
 ### Cross-platform
 
