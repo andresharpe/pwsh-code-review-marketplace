@@ -41,11 +41,30 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 3.0
 
+# Shape-extraction helpers shared with Get-AstIndex.ps1.
+. (Join-Path $PSScriptRoot '_ShapeHelpers.ps1')
+
 Push-Location $RepoRoot
 try {
     $cacheDir = Join-Path $RepoRoot '.pwsh-review/cache'
     if (-not (Test-Path $cacheDir)) {
         New-Item -ItemType Directory -Path $cacheDir -Force | Out-Null
+    }
+
+    # Read the optional shape-tracking toggle from .pwsh-review/config.psd1.
+    # When disabled, the per-function delta still gets the canonical-empty
+    # shape keys so downstream readers can rely on the schema.
+    $enableShapeTracking = $true
+    $configPath = Join-Path $RepoRoot '.pwsh-review/config.psd1'
+    if (Test-Path $configPath) {
+        try {
+            $cfg = Import-PowerShellDataFile $configPath
+            if ($cfg.ContainsKey('EnableShapeTracking')) {
+                $enableShapeTracking = [bool]$cfg.EnableShapeTracking
+            }
+        } catch {
+            Write-Verbose "Could not read $configPath; defaulting EnableShapeTracking=true: $($_.Exception.Message)"
+        }
     }
 
     $indexPath = Join-Path $cacheDir 'ast-index.json'
@@ -158,6 +177,10 @@ try {
                 calls_added             = @()
                 calls_removed           = @()
                 scope_writes_added      = @()
+                emits_shape_changed     = $false
+                properties_dropped      = @()
+                properties_added        = @()
+                stale_consumers         = @()
             }
 
             try {
@@ -174,20 +197,55 @@ try {
                     }, $true) | Select-Object -First 1
 
                     if ($preFunc) {
-                        # Crude diff: compare the textual representations of params, output type, process block
-                        $preParams = ($preFunc.Parameters ?? $preFunc.Body.ParamBlock.Parameters | ForEach-Object {
-                            $_.Name.VariablePath.UserPath
-                        })
-                        $postParams = $func.parameters | ForEach-Object { $_.name }
-                        $delta.signature_changed = (Compare-Object $preParams $postParams) -ne $null
+                        # Cross-module data-shape diff (PWSH-DIFF-201).
+                        # Run this first and in its own try/catch so it does
+                        # not get short-circuited by errors in unrelated
+                        # delta computations below.
+                        if ($enableShapeTracking) {
+                            try {
+                                $preEmits = @(Get-EmitsShape -FuncAst $preFunc)
+                                $postEmits = @($func.emits_shape)
+                                $shapeDiff = Compare-EmitShapesForDrop -PreEmits $preEmits -PostEmits $postEmits
+                                $delta.properties_dropped = @($shapeDiff.properties_dropped)
+                                $delta.properties_added = @($shapeDiff.properties_added)
+                                $delta.emits_shape_changed = (
+                                    $delta.properties_dropped.Count -gt 0 -or
+                                    $delta.properties_added.Count -gt 0
+                                )
+                            } catch {
+                                Write-Verbose "Shape-diff failed for $($func.name): $($_.Exception.Message)"
+                            }
+                        }
 
-                        $delta.process_block_changed = ($null -ne $preFunc.Body.ProcessBlock) -ne $func.has_process_block
+                        # Pre-existing delta fields (signature, calls). The
+                        # ?? + Compare-Object pair errors when both sides are
+                        # null/empty (no parameters), so it lives in its own
+                        # try so a failure does not invalidate other deltas.
+                        try {
+                            $preParams = @(if ($preFunc.Parameters) {
+                                $preFunc.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }
+                            } elseif ($preFunc.Body.ParamBlock -and $preFunc.Body.ParamBlock.Parameters) {
+                                $preFunc.Body.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }
+                            })
+                            $postParams = @($func.parameters | ForEach-Object { $_.name })
+                            $delta.signature_changed = if ($preParams.Count -eq 0 -and $postParams.Count -eq 0) {
+                                $false
+                            } elseif ($preParams.Count -eq 0 -or $postParams.Count -eq 0) {
+                                $true
+                            } else {
+                                (Compare-Object $preParams $postParams) -ne $null
+                            }
 
-                        $preCalls = @($preFunc.FindAll({
-                            param($n) $n -is [System.Management.Automation.Language.CommandAst]
-                        }, $true) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ } | Select-Object -Unique)
-                        $delta.calls_added = @($func.calls | Where-Object { $_ -notin $preCalls })
-                        $delta.calls_removed = @($preCalls | Where-Object { $_ -notin $func.calls })
+                            $delta.process_block_changed = ($null -ne $preFunc.Body.ProcessBlock) -ne $func.has_process_block
+
+                            $preCalls = @($preFunc.FindAll({
+                                param($n) $n -is [System.Management.Automation.Language.CommandAst]
+                            }, $true) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ } | Select-Object -Unique)
+                            $delta.calls_added = @($func.calls | Where-Object { $_ -notin $preCalls })
+                            $delta.calls_removed = @($preCalls | Where-Object { $_ -notin $func.calls })
+                        } catch {
+                            Write-Verbose "Signature-diff failed for $($func.name): $($_.Exception.Message)"
+                        }
                     }
                 }
             } catch {
@@ -198,6 +256,38 @@ try {
             $callers = @()
             if ($index.callers_of.Contains($func.name)) {
                 $callers = $index.callers_of[$func.name]
+            }
+
+            # Resolve stale consumers: callers that still access a property
+            # the function dropped. Pivots through callers_of -> the caller
+            # function's consumes_shape entries.
+            if ($enableShapeTracking -and $delta.properties_dropped.Count -gt 0) {
+                $staleConsumers = @()
+                $droppedLower = @($delta.properties_dropped | ForEach-Object { $_.ToLowerInvariant() })
+                foreach ($callerRec in $callers) {
+                    $callerFile = $callerRec.file
+                    $callerName = $callerRec.caller
+                    if (-not $index.files.Contains($callerFile)) { continue }
+                    $callerFileEntry = $index.files[$callerFile]
+                    $callerFunc = $callerFileEntry.functions |
+                        Where-Object { $_.name -eq $callerName } |
+                        Select-Object -First 1
+                    if (-not $callerFunc) { continue }
+                    if (-not $callerFunc.Contains('consumes_shape')) { continue }
+                    foreach ($cs in @($callerFunc.consumes_shape)) {
+                        if ($cs.via_call -ne $func.name) { continue }
+                        if ($cs.dynamic) { continue }
+                        if ($cs.property.ToLowerInvariant() -notin $droppedLower) { continue }
+                        $staleConsumers += [ordered]@{
+                            caller_function = $callerName
+                            caller_file     = $callerFile
+                            consumer_line   = $cs.line
+                            property        = $cs.property
+                            dynamic         = $cs.dynamic
+                        }
+                    }
+                }
+                $delta.stale_consumers = @($staleConsumers)
             }
 
             $tests = @()

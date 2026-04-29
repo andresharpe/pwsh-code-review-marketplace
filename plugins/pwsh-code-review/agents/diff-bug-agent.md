@@ -76,6 +76,18 @@ For each signature change, enumerate call sites from `diff-context.json` and lis
 - Now returns multiple objects where it previously returned one (singleton vs array): pipeline behaviour changes. Flag (`major`, conf 85), recommend the comma trick.
 - Now returns nothing where it previously returned: callers using the result get `$null`. Flag (`blocker`, conf 90).
 
+### Cross-module data shape
+
+The static-context layer pre-computes shape diffs on emitted objects (`[pscustomobject]@{...}`, returned hashtables, `New-Object -Property`) and resolves stale consumers via the AST index. Read `delta.stale_consumers` for each changed function in `diff-context.json`.
+
+- `PWSH-DIFF-201` — the changed function dropped a property the caller still accesses by name. Emit one finding per `stale_consumers` entry.
+  - Severity `major`. Confidence 80 when both the emit-site and the consumer used literal property names (`dynamic == false` on both sides). Confidence 60 with hedged wording when either side is dynamic.
+  - `evidence[]` must cite the consumer's `caller_file:consumer_line` AND the changed function's emit-site line.
+  - Do NOT fire when `delta.emits_shape_changed` is false or `delta.properties_dropped` is empty.
+  - Do NOT fire on dynamic-key emit sites (the static layer excludes these from `properties_dropped` already; if you see a dropped property here it is mechanically robust).
+
+The `delta.properties_added` field is informational only in v1; no rule fires on it.
+
 ### Error contract
 
 - `throw` added at the top level: was non-terminating, now terminating. Callers may not have `try/catch`. Flag (`major`, conf 85).

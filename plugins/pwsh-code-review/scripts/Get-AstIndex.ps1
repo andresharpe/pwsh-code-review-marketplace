@@ -67,6 +67,10 @@ $index = if ($Cold -or -not (Test-Path $indexPath)) {
     }
 }
 
+# Shape-extraction helpers (Get-EmitsShape / Get-ConsumesShape) live in
+# _ShapeHelpers.ps1 so Get-DiffContext.ps1 can dot-source them too.
+. (Join-Path $PSScriptRoot '_ShapeHelpers.ps1')
+
 function ConvertTo-FunctionEntry {
     [CmdletBinding()]
     param(
@@ -212,6 +216,8 @@ function ConvertTo-FunctionEntry {
         calls                   = $calls
         scope_writes            = $scopeWrites
         platform_signals        = $platformSignals
+        emits_shape             = @(Get-EmitsShape -FuncAst $FuncAst)
+        consumes_shape          = @(Get-ConsumesShape -FuncAst $FuncAst)
     }
 }
 
