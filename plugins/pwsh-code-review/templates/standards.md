@@ -91,6 +91,18 @@ This project targets all three desktop platforms. The following are blockers:
 - Tests use `Should` assertions; tests without assertions are forbidden.
 - Code coverage minimum: <set your number, e.g. 80%>.
 
+### Test brittleness
+
+Tests should assert behaviour, not coincidences of the current data. A test that breaks every time an unrelated example is added has negative value: it trains authors to update assertions to match outputs rather than to think about what the production code is supposed to do. The reviewer flags the following patterns under the `PWSH-TEST-NNN` rule namespace.
+
+A finding fires only when the candidate expression sits inside an assertion call (`Should` or `Assert-*`) — either as an argument (`Assert-True -Condition (...)`) or via pipeline (`$x | Should -Be 1`). Rules `PWSH-TEST-003` and `PWSH-TEST-004` use a wider scope (any `Describe`/`Context`/`It`/`Before*`/`After*` block) because the brittle production-code pattern they catch is a bug regardless of where the assertion sits.
+
+- `PWSH-TEST-001` - `.Count -ge N` or `.Count -eq N` with `N > 5` inside an assertion. Assert on a property of the data, not its size.
+- `PWSH-TEST-002` - order-dependent regex against multi-line output from `Get-Content`/`Get-ChildItem`/`Get-Process`/`Format-*` inside an assertion. Filter to the line of interest before matching, or assert structurally.
+- `PWSH-TEST-003` - `Sort-Object | Get-Unique` inside a test scriptblock followed by an indexed or ordered comparison. The sort destroys the original order; the assertion tests the sort, not the production code.
+- `PWSH-TEST-004` - ordered access on a hashtable's `.Keys` (`($h.Keys)[N]` or `$h.Keys | Select-Object -First/-Last/-Index`) inside a test scriptblock. Hashtable key enumeration order is unspecified.
+- `PWSH-TEST-005` - `Should -Match` / `-match` against a regex literal containing literal `\\` and no forward slash, inside an assertion. Will fail on Linux/macOS CI.
+
 ## Module manifests
 
 - `FunctionsToExport` lists the actual exports (no `'*'`).
