@@ -48,8 +48,8 @@ You do **not** own:
    - Old `process`/`begin`/`end` block presence vs new
    - Old `try/catch`/`throw` patterns vs new
    - State touched (I/O, env vars, network, filesystem, registry)
-3. For each function that changed in a contract-affecting way, look up callers from `diff-context.json.callers[functionName]` and verify each call site still works under the new contract.
-4. For each function that changed in any way, look up tests from `diff-context.json.tests[functionName]` and verify coverage.
+3. For each function that changed in a contract-affecting way, look up callers from `diff-context.json.changed_functions[].callers` (the entry whose `name` matches) and verify each call site still works under the new contract.
+4. For each function that changed in any way, look up tests from `diff-context.json.changed_functions[].tests` and verify coverage.
 
 ## Specific patterns
 
@@ -125,7 +125,7 @@ The `delta.properties_added` field is informational only in v1; no rule fires on
 
 ### Cross-cutting heuristics
 
-These patterns are language-agnostic and high-value when the diff sits between two cooperating layers. They map to rule IDs `PWSH-DIFF-300..306`. Every finding must cite the specific lines that show the pattern in `evidence[]`.
+These patterns are language-agnostic and high-value when the diff sits between two cooperating layers. They map to rule IDs `PWSH-DIFF-300..309`. Every finding must cite the specific lines that show the pattern in `evidence[]`.
 
 - **`PWSH-DIFF-300` — Identifier / key collision.** When the diff normalises an input to derive a lookup key (strips an extension, lowercases, trims a prefix, slugifies), verify that two distinct inputs cannot map to the same key. Example: stripping both `.md` and `.json` produces `foo.md` and `foo.json` colliding on `foo`. Severity `major`, conf 80 if the colliding inputs are demonstrable from existing call sites; `minor`, conf 70 if hypothetical.
 
@@ -145,7 +145,7 @@ These patterns are language-agnostic and high-value when the diff sits between t
 
 - **`PWSH-DIFF-308` — Comment-as-contract mismatch.** When a comment uses modal verbs ("preserves", "guarantees", "ensures", "always", "never", "must") to describe what the next line(s) of code do, verify the code actually delivers that contract. Common bug: a comment says "preserves the original encoding" above a write that normalises to `utf8NoBOM`; or "ensures idempotent" above a `New-Item` without `-Force`. Severity `major`, conf 80 when the violation is mechanically demonstrable (the comment's modal claim is contradicted by a single named cmdlet or operator on the next line); `minor`, conf 70 when the claim is broader (covers a block) and the contradiction needs reading several lines. Cite the comment line and the contradicting code line in `evidence[]`. Recommend either rewording the comment to match the code or fixing the code to deliver the claim. Heuristic only -- agent territory, not a static rule.
 
-- **`PWSH-DIFF-309` — Per-path status-field correctness.** When a function returns a hashtable (or `[pscustomobject]`) with a status string drawn from a fixed vocabulary (e.g. `'restored'`, `'unchanged'`, `'missing'`), enumerate every `return` statement and verify the status field truthfully describes what happened on that path. Common bug: a function ships three early-return branches but the status field has only two distinct constants -- meaning at least one path emits a status that lies about its branch. Severity `major`, conf 85 when the status field is consumed by callers (the consumer site is in `diff-context.json.callers[functionName]`); `minor`, conf 70 when status is informational only. Cite each return site's status value in `evidence[]` and explain the divergence between the fewest-distinct-values count and the early-return count.
+- **`PWSH-DIFF-309` — Per-path status-field correctness.** When a function returns a hashtable (or `[pscustomobject]`) with a status string drawn from a fixed vocabulary (e.g. `'restored'`, `'unchanged'`, `'missing'`), enumerate every `return` statement and verify the status field truthfully describes what happened on that path. Common bug: a function ships three early-return branches but the status field has only two distinct constants -- meaning at least one path emits a status that lies about its branch. Severity `major`, conf 85 when the status field is consumed by callers (the consumer site is in `diff-context.json.changed_functions[].callers` for the matching `name`); `minor`, conf 70 when status is informational only. Cite each return site's status value in `evidence[]` and explain the divergence between the fewest-distinct-values count and the early-return count.
 
 ### Resource leaks
 

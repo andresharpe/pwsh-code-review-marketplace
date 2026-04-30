@@ -123,9 +123,9 @@ The previous two sections fit together as a closed loop:
 | 2026-04-30 | PR-A (#37) | `$Matches` clobber on nested regex | pwsh-idioms-agent |
 | 2026-04-30 | PR-A (#37) | `ConvertFrom-Json -AsHashtable` single-element unwrap under StrictMode 3.0 | pwsh-idioms-agent |
 | 2026-04-30 | PR-A (#37) | `Write-Host` replacement guidance (Information / Verbose / Warning / Error) | pwsh-idioms-agent |
-| 2026-04-30 | PR-B | Vocabulary validation at boundary (PWSH-DIFF-307) | diff-bug-agent |
-| 2026-04-30 | PR-B | Comment-as-contract mismatch (PWSH-DIFF-308) | diff-bug-agent |
-| 2026-04-30 | PR-B | Per-path status-field correctness (PWSH-DIFF-309) | diff-bug-agent |
+| 2026-04-30 | PR-B (#38) | Vocabulary validation at boundary (PWSH-DIFF-307) | diff-bug-agent |
+| 2026-04-30 | PR-B (#38) | Comment-as-contract mismatch (PWSH-DIFF-308) | diff-bug-agent |
+| 2026-04-30 | PR-B (#38) | Per-path status-field correctness (PWSH-DIFF-309) | diff-bug-agent |
 
 ---
 
