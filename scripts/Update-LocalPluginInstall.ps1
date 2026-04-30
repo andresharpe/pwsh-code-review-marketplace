@@ -74,8 +74,14 @@ $RepoRoot = (Resolve-Path $RepoRoot).Path
 if (-not $PluginsRoot) {
     if ($env:CLAUDE_PLUGINS_ROOT) {
         $PluginsRoot = $env:CLAUDE_PLUGINS_ROOT
-    } elseif ($IsWindows -or $env:USERPROFILE) {
-        $PluginsRoot = Join-Path $env:USERPROFILE '.claude' 'plugins'
+    } elseif ($IsWindows) {
+        $userProfile = $env:USERPROFILE
+        if (-not $userProfile) { $userProfile = $HOME }
+        if (-not $userProfile) { $userProfile = [Environment]::GetFolderPath('UserProfile') }
+        if (-not $userProfile) {
+            throw "Could not determine the user profile directory on Windows. Set CLAUDE_PLUGINS_ROOT or pass -PluginsRoot."
+        }
+        $PluginsRoot = Join-Path $userProfile '.claude' 'plugins'
     } else {
         $PluginsRoot = Join-Path $HOME '.claude' 'plugins'
     }
