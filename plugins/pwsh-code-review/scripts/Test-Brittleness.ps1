@@ -4,7 +4,7 @@
     Detects brittle assertion patterns in PowerShell test files.
 
 .DESCRIPTION
-    Heuristic AST scan over Pester (`*.Tests.ps1`) and dotbot-style
+    Heuristic AST scan over Pester (`*.Tests.ps1`) and verb-noun
     (`Test-*.ps1`) test files. Emits findings under the `PWSH-TEST-NNN`
     rule namespace.
 
@@ -57,7 +57,7 @@ $script:TestBlockAnchors = @(
     # Pester
     'Should', 'Describe', 'Context', 'It',
     'BeforeEach', 'AfterEach', 'BeforeAll', 'AfterAll'
-    # Dotbot Assert-* helpers are matched by name prefix below.
+    # Assert-* helpers (e.g. `Assert-True`) are matched by name prefix below.
 )
 
 function Test-IsInAssertion {
@@ -156,10 +156,10 @@ function Test-LooksLikeTestFile {
     param([Parameter(Mandatory)][string]$FilePath)
     $basename = [IO.Path]::GetFileName($FilePath)
     $isPester = $basename -like '*.Tests.ps1'
-    $isDotbot = $basename -like 'Test-*.ps1'
-    if (-not $isPester -and -not $isDotbot) { return $false }
+    $isVerbNoun = $basename -like 'Test-*.ps1'
+    if (-not $isPester -and -not $isVerbNoun) { return $false }
     if ($isPester) { return $true }
-    # Dotbot convention: only treat as a test file if it actually
+    # Verb-noun convention: only treat as a test file if it actually
     # contains an assertion or Pester scaffolding. Excludes harnesses
     # like Run-Tests.ps1 / Test-Helpers.psm1-style files.
     try {

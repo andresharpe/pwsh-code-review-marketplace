@@ -171,9 +171,9 @@ Example:
 
 ### blocker (1)
 
-**[blocker] (95) `src/Modules/DotbotCore/Public/New-Worktree.ps1:42-48`**
+**[blocker] (95) `src/Modules/WidgetCore/Public/New-Widget.ps1:42-48`**
 Removed `[ValidateNotNullOrEmpty()]` from `-Path` parameter. Callers in
-`server.ps1:120` and `tests/New-Worktree.Tests.ps1:55` rely on the validation
+`server.ps1:120` and `tests/New-Widget.Tests.ps1:55` rely on the validation
 to fail fast; without it, an empty path will reach `Join-Path` and produce
 a confusing PathTooLong error.
 

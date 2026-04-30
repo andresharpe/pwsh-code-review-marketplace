@@ -260,7 +260,7 @@ try {
         }
     }
 
-    # 7. Test brittleness (heuristic AST scan over Pester / dotbot test files)
+    # 7. Test brittleness (heuristic AST scan over Pester / verb-noun test files)
     $tbScript = Join-Path $PSScriptRoot 'Test-Brittleness.ps1'
     if (Test-Path $tbScript) {
         $tbScope = if ($All) {
