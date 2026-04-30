@@ -183,28 +183,36 @@ function Get-PinnableLine {
     <#
     Pick the line GitHub will accept for an inline comment on $File at
     desired $Line. Strategy:
-      1. If $Line is inside any hunk for the file: keep it.
+      1. If $Line is inside any hunk for the file: keep it AND return the
+         hunk's index so the caller can verify two endpoints fall inside
+         the SAME hunk before emitting a multi-line range comment.
       2. Otherwise, pick the first hunk's line_start (closest pinnable
          anchor) and signal that the original line was clamped.
       3. If the file has no hunks at all (extremely rare for findings on
          a changed file): return $null. Caller posts a file-level comment.
-    Returns @{ line = <int|null>; clamped = <bool> }.
+    Returns @{ line = <int|null>; clamped = <bool>; hunk_index = <int|null> }.
+    The hunk_index is 0-based; -1 means clamped (no exact match).
     #>
     param(
         [hashtable]$HunksByFile,
         [string]$File,
         [int]$Line
     )
-    if (-not $HunksByFile.ContainsKey($File)) { return @{ line = $null; clamped = $false } }
+    if (-not $HunksByFile.ContainsKey($File)) {
+        return @{ line = $null; clamped = $false; hunk_index = $null }
+    }
     $hunks = @($HunksByFile[$File])
-    if ($hunks.Count -eq 0) { return @{ line = $null; clamped = $false } }
-    foreach ($h in $hunks) {
+    if ($hunks.Count -eq 0) {
+        return @{ line = $null; clamped = $false; hunk_index = $null }
+    }
+    for ($i = 0; $i -lt $hunks.Count; $i++) {
+        $h = $hunks[$i]
         if ($Line -ge $h.start -and $Line -le $h.end) {
-            return @{ line = $Line; clamped = $false }
+            return @{ line = $Line; clamped = $false; hunk_index = $i }
         }
     }
     # Outside every hunk. Anchor to the first hunk's start.
-    return @{ line = $hunks[0].start; clamped = $true }
+    return @{ line = $hunks[0].start; clamped = $true; hunk_index = -1 }
 }
 
 function ConvertTo-CommentBody {
@@ -339,15 +347,21 @@ foreach ($f in @($merged.findings)) {
         if ($f.PSObject.Properties['line_end'] -and $f.line_end -and `
             [int]$f.line_end -ne [int]$pin.line -and `
             -not $pin.clamped) {
-            # Multi-line range. start_line must be in the same hunk too;
-            # check before emitting.
+            # Multi-line range. GitHub requires both endpoints to fall
+            # inside the SAME diff hunk — emit start_line/start_side only
+            # when both pins are exact AND share a hunk index. Anything
+            # else collapses to a single-line comment on the start pin.
             $endLine = [int]$f.line_end
             $endPin  = Get-PinnableLine -HunksByFile $hunksByFile -File $f.file -Line $endLine
-            if ($endPin.line -and -not $endPin.clamped -and $endPin.line -ne $pin.line) {
+            $bothExact = $endPin.line -and -not $endPin.clamped
+            $sameHunk  = $bothExact -and ($pin.hunk_index -eq $endPin.hunk_index)
+            if ($sameHunk -and $endPin.line -ne $pin.line) {
                 $entry['start_line'] = [Math]::Min([int]$pin.line, [int]$endPin.line)
                 $entry['line']       = [Math]::Max([int]$pin.line, [int]$endPin.line)
                 $entry['start_side'] = 'RIGHT'
             }
+            # Else: stay single-line on $pin.line. Two-hunk ranges would
+            # produce an invalid review payload that GitHub rejects.
         }
         if ($pin.clamped) { $clamped++ }
     }
@@ -401,26 +415,34 @@ if (-not $Owner -or -not $Repo) {
     throw "Owner/repo could not be resolved. Pass -Owner and -Repo explicitly."
 }
 
-$tempfile = Join-Path ([IO.Path]::GetTempPath()) ("pwsh-review-payload-{0}.json" -f ([guid]::NewGuid().ToString('N')))
-$payloadJson | Set-Content -LiteralPath $tempfile -Encoding utf8NoBOM
+# Persist the payload at a stable, predictable path under the cache dir so
+# the returned PayloadPath is meaningful for debugging/forensics. Overwritten
+# on each run; the cache dir is gitignored so this isn't committed.
+$payloadPath = Join-Path $cacheDir 'last-review-payload.json'
+$payloadJson | Set-Content -LiteralPath $payloadPath -Encoding utf8NoBOM
 
-try {
-    $apiPath = "/repos/$Owner/$Repo/pulls/$Pr/reviews"
-    $response = gh api --method POST --input $tempfile $apiPath 2>&1
-    $exit = $LASTEXITCODE
+$apiPath = "/repos/$Owner/$Repo/pulls/$Pr/reviews"
+$response = gh api --method POST --input $payloadPath $apiPath 2>&1
+$exit = $LASTEXITCODE
 
-    return [pscustomobject]@{
-        Mode          = 'Live'
-        PayloadPath   = $tempfile
-        Event         = $event
-        Verdict       = $verdict
-        CommentCount  = $comments.Count
-        ClampedLines  = $clamped
-        SkippedCount  = $skipped
-        ApiPath       = $apiPath
-        Response      = $response
-        ExitCode      = $exit
-    }
-} finally {
-    Remove-Item -LiteralPath $tempfile -Force -ErrorAction SilentlyContinue
+# Throw on non-zero exit so callers running under ErrorActionPreference='Stop'
+# don't think the review posted when it didn't. The payload stays on disk so
+# the user can inspect it after the failure.
+if ($exit -ne 0) {
+    $responseText = if ($response -is [array]) { ($response | ForEach-Object { $_.ToString() }) -join "`n" }
+                    else { "$response" }
+    throw "gh api POST $apiPath failed (exit $exit). Payload preserved at $payloadPath. Response: $responseText"
+}
+
+[pscustomobject]@{
+    Mode          = 'Live'
+    PayloadPath   = $payloadPath
+    Event         = $event
+    Verdict       = $verdict
+    CommentCount  = $comments.Count
+    ClampedLines  = $clamped
+    SkippedCount  = $skipped
+    ApiPath       = $apiPath
+    Response      = $response
+    ExitCode      = $exit
 }

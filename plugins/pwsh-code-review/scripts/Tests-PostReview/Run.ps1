@@ -250,6 +250,52 @@ Assert-True 'S5: range finding has line=18'       ($rangeComment.line -eq 18)
 Assert-True 'S5: range finding has start_side=RIGHT' ($rangeComment.start_side -eq 'RIGHT')
 Remove-Scenario -TempRoot $tmp5
 
+# --- Scenario 6: range spans two SEPARATE hunks -> collapse to single-line --
+# GitHub rejects multi-line review comments whose endpoints fall in
+# different diff hunks. The poster must collapse to a single-line comment
+# on the start pin rather than emit an invalid payload.
+
+$tmp6 = New-Scenario `
+    -Findings @(
+        [ordered]@{
+            severity   = 'minor'
+            confidence = 90
+            rule       = 'PWSH-DIFF-200'
+            file       = 'src/Foo.ps1'
+            line_start = 12   # in hunk A [10..20]
+            line_end   = 55   # in hunk B [50..60] - DIFFERENT hunk
+            message    = 'Range crosses two hunks.'
+        }
+    ) `
+    -Verdict 'ship' `
+    -Counts @{ blocker = 0; major = 0; minor = 1; nit = 0; question = 0; praise = 0 } `
+    -Hunks @(
+        [pscustomobject]@{ file = 'src/Foo.ps1'; line_start = 10; line_end = 20 }
+        [pscustomobject]@{ file = 'src/Foo.ps1'; line_start = 50; line_end = 60 }
+    )
+
+$payload6 = Invoke-DryRun -TempRoot $tmp6
+$crossComment = $payload6.comments | Where-Object { $_.path -eq 'src/Foo.ps1' }
+Assert-True 'S6: cross-hunk range collapses to single-line on start pin' `
+    ($crossComment.line -eq 12)
+Assert-True 'S6: cross-hunk range does NOT emit start_line' `
+    (-not ($crossComment.PSObject.Properties.Name -contains 'start_line'))
+Assert-True 'S6: cross-hunk range does NOT emit start_side' `
+    (-not ($crossComment.PSObject.Properties.Name -contains 'start_side'))
+Remove-Scenario -TempRoot $tmp6
+
+# --- Scenario 7: live-mode payload path is the cache file (PayloadPath
+#     hygiene). We can't really run live mode in a self-test, but we can
+#     verify the script defines $payloadPath under .pwsh-review/cache by
+#     checking the script source for the canonical path. Cheap check, but
+#     it locks the contract: PayloadPath must be a real on-disk artifact
+#     that survives the call.
+$srcText = Get-Content -Raw -LiteralPath $scriptPath
+Assert-True 'S7: live mode persists payload at cache/last-review-payload.json' `
+    ($srcText -match "last-review-payload\.json")
+Assert-True 'S7: live mode throws on non-zero gh api exit' `
+    ($srcText -match 'throw "gh api POST')
+
 Write-Output ''
 if ($failures.Count -gt 0) {
     Write-Output 'FAILURES:'
