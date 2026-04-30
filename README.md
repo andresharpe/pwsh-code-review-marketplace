@@ -41,11 +41,34 @@ pwsh-code-review-marketplace/
 
 ## Updating the plugin
 
+One command from a shell:
+
 ```bash
-/plugin uninstall pwsh-code-review@pwsh-code-review-marketplace
-# pull / overwrite the marketplace contents
+pwsh ./scripts/Update-LocalPluginInstall.ps1
+```
+
+What it does:
+
+- Pulls the latest `main` (skip with `-NoPull`).
+- Repoints Claude Code's marketplace registration at this repo's path (handles the case where the registration is stale or pointing at a different folder).
+- **Always** clears the plugin cache (`~/.claude/plugins/cache/pwsh-code-review-marketplace/`).
+- Drops the installed-plugin entry so Claude Code re-extracts the plugin from the fresh marketplace source.
+
+After it finishes, restart Claude Code, **or** run this in any session:
+
+```
 /plugin install pwsh-code-review@pwsh-code-review-marketplace
 ```
+
+Pass `-DryRun` to preview the changes without writing anything. Pass `-RepoRoot` and `-PluginsRoot` to override the default paths (the latter is useful on macOS/Linux or when `$env:CLAUDE_PLUGINS_ROOT` is set).
+
+If you prefer to do it interactively from inside Claude Code (no script run), use:
+
+```
+/plugin marketplace update pwsh-code-review-marketplace
+```
+
+That works when the marketplace is already registered at the correct path; the script above is the right choice when the registration is stale, missing, or you want a single shell command.
 
 ## Removing entirely
 
