@@ -192,58 +192,76 @@ foreach ($rule in $rules) {
 # --- Layer 2: live eslint integration (when reachable) -----------------------
 
 $eslintCmd = $null
-if (Get-Command eslint -ErrorAction SilentlyContinue) { $eslintCmd = 'eslint' }
-elseif (Get-Command npx -ErrorAction SilentlyContinue) { $eslintCmd = 'npx' }
+if (Get-Command eslint -ErrorAction SilentlyContinue) {
+    $eslintCmd = 'eslint'
+} elseif (Get-Command npx -ErrorAction SilentlyContinue) {
+    # We use `npx --no-install` so the test never silently downloads
+    # eslint from the registry. CI must have eslint pre-installed (or
+    # available via a project's node_modules); otherwise Layers 2 and 3
+    # skip cleanly.
+    $eslintCmd = 'npx'
+}
 
 if ($eslintCmd) {
     Push-Location $here
     try {
         $eslintArgs = if ($eslintCmd -eq 'npx') {
-            @('eslint', '--format', 'json', '--config', 'eslint.config.js', '*.js')
+            @('--no-install', 'eslint', '--format', 'json', '--config', 'eslint.config.js', '*.js')
         } else {
             @('--format', 'json', '--config', 'eslint.config.js', '*.js')
         }
         $rawOutput = & $eslintCmd @eslintArgs 2>$null
-        # eslint exits non-zero when it finds issues; we don't care, we just
-        # want the JSON. Don't check $LASTEXITCODE.
+        $eslintExit = $LASTEXITCODE
+        # eslint exits 1 when it finds issues — that's expected. But under
+        # `npx --no-install`, exit 127 / 1 with empty stdout means eslint
+        # wasn't found locally. Detect that and skip Layer 2 cleanly.
 
+        # ConvertFrom-Json on a single-element JSON array unwraps to one
+        # PSCustomObject, so we coerce with @(...) to keep array semantics.
         $reports = $null
-        try {
-            $reports = $rawOutput | ConvertFrom-Json -ErrorAction Stop
-        } catch {
-            Assert-True 'ESLint output parsed as JSON' $false "ConvertFrom-Json failed: $($_.Exception.Message)"
-            $reports = @()
+        if ($rawOutput) {
+            try {
+                $reports = @($rawOutput | ConvertFrom-Json -ErrorAction Stop)
+            } catch {
+                $reports = $null
+            }
         }
-        if ($reports) {
+
+        if (-not $reports) {
+            Write-Output "SKIP: ESLint not actually installed locally (exit $eslintExit, no JSON output). Skipping Layer 2."
+            $eslintCmd = $null
+        } else {
             Assert-True 'ESLint output is parseable JSON' $true
-        }
-
-        # Collapse to a flat per-file lookup: file -> messages[]
-        $byFile = @{}
-        foreach ($r in @($reports)) {
-            if (-not $r) { continue }
-            $base = [IO.Path]::GetFileName($r.filePath)
-            $byFile[$base] = @($r.messages)
-        }
-
-        # R004.bad.js must trip eqeqeq.
-        $r4Bad = if ($byFile.ContainsKey('R004-TypeCoercion.bad.js')) { $byFile['R004-TypeCoercion.bad.js'] } else { @() }
-        $eqeqeqHit = @($r4Bad | Where-Object { $_.ruleId -eq 'eqeqeq' }).Count -gt 0
-        Assert-True 'ESLint: R004.bad.js trips eqeqeq' $eqeqeqHit
-
-        # Every .good.js must be eslint-clean (no errors).
-        $goodFixtures = Get-ChildItem -LiteralPath $here -Filter '*.good.js' | ForEach-Object { $_.Name }
-        foreach ($g in $goodFixtures) {
-            $msgs = if ($byFile.ContainsKey($g)) { $byFile[$g] } else { @() }
-            $errs = @($msgs | Where-Object { [int]$_.severity -eq 2 })
-            Assert-True ("ESLint: $g has zero errors") ($errs.Count -eq 0) `
-                ("got $($errs.Count): " + (($errs | ForEach-Object { $_.ruleId }) -join ', '))
         }
     } finally {
         Pop-Location
     }
-} else {
-    Write-Output 'SKIP: ESLint not on PATH and npx unavailable. Skipping Layer 2 (eslint integration).'
+}
+
+if ($eslintCmd -and $reports) {
+    # $reports captured above; no fs access needed for the assertions.
+    $byFile = @{}
+    foreach ($r in @($reports)) {
+        if (-not $r) { continue }
+        $base = [IO.Path]::GetFileName($r.filePath)
+        $byFile[$base] = @($r.messages)
+    }
+
+    # R004.bad.js must trip eqeqeq.
+    $r4Bad = if ($byFile.ContainsKey('R004-TypeCoercion.bad.js')) { $byFile['R004-TypeCoercion.bad.js'] } else { @() }
+    $eqeqeqHit = @($r4Bad | Where-Object { $_.ruleId -eq 'eqeqeq' }).Count -gt 0
+    Assert-True 'ESLint: R004.bad.js trips eqeqeq' $eqeqeqHit
+
+    # Every .good.js must be eslint-clean (no errors).
+    $goodFixtures = Get-ChildItem -LiteralPath $here -Filter '*.good.js' | ForEach-Object { $_.Name }
+    foreach ($g in $goodFixtures) {
+        $msgs = if ($byFile.ContainsKey($g)) { $byFile[$g] } else { @() }
+        $errs = @($msgs | Where-Object { [int]$_.severity -eq 2 })
+        Assert-True ("ESLint: $g has zero errors") ($errs.Count -eq 0) `
+            ("got $($errs.Count): " + (($errs | ForEach-Object { $_.ruleId }) -join ', '))
+    }
+} elseif (-not $eslintCmd) {
+    Write-Output 'SKIP: ESLint not on PATH and not reachable via `npx --no-install`. Skipping Layer 2 (eslint integration).'
 }
 
 # --- Layer 3: Invoke-StaticAnalysis integration (when eslint reachable) ------

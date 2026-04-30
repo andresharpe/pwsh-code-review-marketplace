@@ -314,23 +314,50 @@ try {
     }
 
     # 10. eslint (optional, opportunistic). Only fires when:
-    #       (a) the diff touches a JS/TS file (or -All), AND
-    #       (b) eslint is reachable via either an `eslint` on PATH or a
-    #           local `node_modules/.bin/eslint` from `npx eslint`.
-    #     Most PowerShell projects do not bring an eslint config; the
-    #     opportunistic gate keeps the runner zero-cost in that case.
+    #       (a) the scope contains a real JS/TS file (in -All mode we walk
+    #           the tree; otherwise we filter the diff scope by extension), AND
+    #       (b) eslint is reachable via either an `eslint` on PATH or as a
+    #           project-declared dependency in package.json (which `npx eslint`
+    #           can then run from `node_modules/.bin/eslint`).
+    #     Most PowerShell projects do not bring JS files; the gate keeps the
+    #     runner zero-cost in that case.
     $jsExts = @('.js', '.mjs', '.cjs', '.ts', '.tsx')
-    # PowerShell unwraps single-element arrays returned from an `if`
-    # expression, so a one-file diff would land here as a bare string and
-    # crash the .Count check below under strict mode. Force-rewrap.
+
+    # In -All mode, enumerate actual JS/TS files instead of using `'.'` as a
+    # sentinel — otherwise pure-PowerShell repos look like "JS in scope"
+    # under -All and trigger eslint-missing warnings + needless tree walks.
     $jsScope = @(if ($All) {
-        @('.')
+        Get-ChildItem -Path $RepoRoot -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                $ext = $_.Extension.ToLowerInvariant()
+                ($ext -in $jsExts) -and
+                ($_.FullName -notmatch '[/\\](node_modules|\.git|dist|build|coverage|\.next)[/\\]')
+            } |
+            ForEach-Object {
+                [System.IO.Path]::GetRelativePath($RepoRoot, $_.FullName).Replace('\', '/')
+            }
     } else {
         @($scopePaths | Where-Object {
             $ext = [IO.Path]::GetExtension($_).ToLowerInvariant()
             $ext -in $jsExts
         })
     })
+
+    # Helper: does package.json declare eslint as a dependency or devDependency?
+    function Test-PackageJsonHasEsLint {
+        param([string]$RepoRoot)
+        $pkg = Join-Path $RepoRoot 'package.json'
+        if (-not (Test-Path -LiteralPath $pkg)) { return $false }
+        try {
+            $j = Get-Content -LiteralPath $pkg -Raw | ConvertFrom-Json -AsHashtable
+            $deps    = if ($j.ContainsKey('dependencies'))    { $j['dependencies']    } else { @{} }
+            $devDeps = if ($j.ContainsKey('devDependencies')) { $j['devDependencies'] } else { @{} }
+            return ($deps.ContainsKey('eslint') -or $devDeps.ContainsKey('eslint'))
+        } catch {
+            return $false
+        }
+    }
+
     $eslintWantedButMissing = $false
     if ($jsScope.Count -gt 0) {
         $eslintAvailable = $false
@@ -338,13 +365,13 @@ try {
         if (Get-Command eslint -ErrorAction SilentlyContinue) {
             $eslintAvailable = $true
             $eslintCmd = 'eslint'
-        } elseif (Test-Path (Join-Path $RepoRoot 'package.json')) {
-            # `npx eslint` works when eslint is in the project's
-            # devDependencies even if it's not on PATH globally.
-            if (Get-Command npx -ErrorAction SilentlyContinue) {
-                $eslintAvailable = $true
-                $eslintCmd = 'npx'
-            }
+        } elseif ((Get-Command npx -ErrorAction SilentlyContinue) -and (Test-PackageJsonHasEsLint -RepoRoot $RepoRoot)) {
+            # Only fall back to `npx eslint` when eslint is actually declared
+            # in the project's package.json. Otherwise `npx` would helpfully
+            # download eslint from the registry, which is non-deterministic
+            # in CI and surprising offline.
+            $eslintAvailable = $true
+            $eslintCmd = 'npx'
         }
 
         if (-not $eslintAvailable) {
@@ -355,7 +382,7 @@ try {
             $eslintWantedButMissing = $true
             Write-Warning @"
 ESLint is not reachable. JS/TS lint will be skipped on this run.
-The diff touches: $(($jsScope | Select-Object -First 5) -join ', ')$(if ($jsScope.Count -gt 5) { ", +$($jsScope.Count - 5) more" })
+The scope includes: $(($jsScope | Select-Object -First 5) -join ', ')$(if ($jsScope.Count -gt 5) { ", +$($jsScope.Count - 5) more" })
 
 To enable, install one of:
   - Globally:    npm install -g eslint
@@ -368,29 +395,90 @@ To enable, install one of:
                 param($repoRoot, $cmd, $files)
                 Push-Location $repoRoot
                 try {
-                    $args = if ($cmd -eq 'npx') { @('eslint', '--format', 'json') + $files }
-                            else { @('--format', 'json') + $files }
-                    $output = & $cmd @args 2>$null
-                    if (-not $output) { return @() }
-                    $reports = $output | ConvertFrom-Json -ErrorAction SilentlyContinue
-                    if (-not $reports) { return @() }
-                    $findings = @()
-                    foreach ($r in $reports) {
-                        foreach ($m in @($r.messages)) {
-                            $findings += [ordered]@{
-                                rule_name = "eslint/$($m.ruleId ?? 'parse-error')"
-                                # eslint severity: 1=warning, 2=error
-                                severity  = if ([int]$m.severity -eq 2) { 'Error' } else { 'Warning' }
-                                file      = $r.filePath
-                                line      = [int]($m.line ?? 0)
-                                column    = [int]($m.column ?? 0)
-                                message   = $m.message
+                    # `npx --no-install` keeps us deterministic: if eslint
+                    # isn't already installed, npx exits non-zero rather
+                    # than silently downloading from the registry. The
+                    # availability gate above already verified eslint is
+                    # declared in package.json, so this should always
+                    # resolve to the local install.
+                    $args = if ($cmd -eq 'npx') {
+                        @('--no-install', 'eslint', '--format', 'json') + $files
+                    } else {
+                        @('--format', 'json') + $files
+                    }
+
+                    # Capture stdout AND stderr separately so we can
+                    # distinguish "eslint ran fine and produced no findings"
+                    # from "eslint failed and we have no findings to report".
+                    $stderrFile = [System.IO.Path]::GetTempFileName()
+                    try {
+                        $stdout = & $cmd @args 2>$stderrFile
+                        $exit   = $LASTEXITCODE
+                        $stderr = if (Test-Path -LiteralPath $stderrFile) {
+                            Get-Content -LiteralPath $stderrFile -Raw
+                        } else { '' }
+
+                        # eslint exits 0 (clean), 1 (lint errors found,
+                        # still success — JSON has them), or 2+ (config /
+                        # runtime failure). Use exit code as the primary
+                        # discriminator; stdout JSON is secondary.
+                        # ConvertFrom-Json on a single-element JSON array
+                        # unwraps to one PSCustomObject, so we coerce with
+                        # @(...) to keep array semantics.
+                        $reports = $null
+                        $parseOk = $false
+                        if ($stdout) {
+                            try {
+                                $reports = @($stdout | ConvertFrom-Json -ErrorAction Stop)
+                                $parseOk = $true
+                            } catch {
+                                $reports = $null
+                                $parseOk = $false
                             }
                         }
+
+                        if ($exit -gt 1 -or -not $parseOk) {
+                            # Real failure. Surface it as a structured error
+                            # so the merger can render an actionable warning
+                            # instead of "0 eslint findings, all green!".
+                            $errMsg = if ($stderr) { $stderr.Trim() } elseif ($stdout) { ($stdout -join "`n").Trim() } else { "eslint exited $exit with no output" }
+                            return [ordered]@{
+                                __error  = $true
+                                exit     = [int]$exit
+                                message  = $errMsg
+                                findings = @()
+                            }
+                        }
+
+                        $findings = @()
+                        foreach ($r in @($reports)) {
+                            foreach ($m in @($r.messages)) {
+                                $findings += [ordered]@{
+                                    rule_name = "eslint/$($m.ruleId ?? 'parse-error')"
+                                    # eslint severity: 1=warning, 2=error
+                                    severity  = if ([int]$m.severity -eq 2) { 'Error' } else { 'Warning' }
+                                    file      = $r.filePath
+                                    line      = [int]($m.line ?? 0)
+                                    column    = [int]($m.column ?? 0)
+                                    message   = $m.message
+                                }
+                            }
+                        }
+                        return [ordered]@{
+                            __error  = $false
+                            exit     = [int]$exit
+                            findings = $findings
+                        }
+                    } finally {
+                        Remove-Item -LiteralPath $stderrFile -Force -ErrorAction SilentlyContinue
                     }
-                    , $findings
                 } catch {
-                    , @()
+                    return [ordered]@{
+                        __error  = $true
+                        exit     = -1
+                        message  = $_.Exception.Message
+                        findings = @()
+                    }
                 } finally { Pop-Location }
             } -ArgumentList $RepoRoot, $eslintCmd, $jsScope
         }
@@ -420,6 +508,11 @@ To enable, install one of:
         test_coverage     = @()
         eslint            = @()
         tools_missing     = @()
+        # Tools that WERE attempted but failed at runtime (eslint config
+        # missing, parse error, non-zero exit with no parseable output).
+        # The merger renders these alongside `tools_missing` so a "0
+        # findings" result is never silently a tool failure.
+        tools_errors      = @()
     }
 
     foreach ($r in $results) {
@@ -489,16 +582,52 @@ To enable, install one of:
                     confidence = $_.confidence
                 }
             }) }
-            'ESLint'          { $aggregate.eslint = @($r.Value | ForEach-Object {
-                @{
-                    rule_name = $_.rule_name
-                    severity  = $_.severity
-                    file      = $_.file
-                    line      = $_.line
-                    column    = $_.column
-                    message   = $_.message
+            'ESLint'          {
+                # New shape: $r.Value is a single dictionary-like object
+                # carrying findings + error info. Access keys defensively
+                # because Receive-Job may preserve [ordered]@{} as
+                # OrderedDictionary OR rehydrate as PSCustomObject
+                # depending on serialisation; their property-access APIs
+                # differ.
+                $eslintResult = $r.Value
+                if ($eslintResult) {
+                    $hasKey = {
+                        param($obj, [string]$key)
+                        if ($obj -is [System.Collections.IDictionary]) { $obj.Contains($key) }
+                        elseif ($obj.PSObject -and $obj.PSObject.Properties[$key]) { $true }
+                        else { $false }
+                    }
+                    $get = {
+                        param($obj, [string]$key)
+                        if ($obj -is [System.Collections.IDictionary]) { $obj[$key] }
+                        else { $obj.$key }
+                    }
+
+                    $isError = (& $hasKey $eslintResult '__error') -and [bool](& $get $eslintResult '__error')
+                    if ($isError) {
+                        $exitCode = if (& $hasKey $eslintResult 'exit') { [int](& $get $eslintResult 'exit') } else { -1 }
+                        $errMsg   = if (& $hasKey $eslintResult 'message') { (& $get $eslintResult 'message') } else { '' }
+                        $aggregate.tools_errors += [ordered]@{
+                            tool    = 'eslint'
+                            exit    = $exitCode
+                            message = $errMsg
+                        }
+                        Write-Warning "ESLint failed (exit ${exitCode}): $errMsg"
+                    } elseif (& $hasKey $eslintResult 'findings') {
+                        $findings = & $get $eslintResult 'findings'
+                        $aggregate.eslint = @(@($findings) | ForEach-Object {
+                            @{
+                                rule_name = $_.rule_name
+                                severity  = $_.severity
+                                file      = $_.file
+                                line      = $_.line
+                                column    = $_.column
+                                message   = $_.message
+                            }
+                        })
+                    }
                 }
-            }) }
+            }
         }
     }
 

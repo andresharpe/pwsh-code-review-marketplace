@@ -6,7 +6,11 @@
 
 export default [
     {
-        files: ['**/*.js', '**/*.mjs', '**/*.cjs'],
+        // .cjs is intentionally NOT in the pattern: this config forces
+        // sourceType: 'module', which would produce avoidable parse errors
+        // on a CommonJS .cjs fixture if one were ever added. If a .cjs
+        // fixture is needed, add a second config block with sourceType: 'script'.
+        files: ['**/*.js', '**/*.mjs'],
         languageOptions: {
             ecmaVersion: 2022,
             sourceType: 'module',

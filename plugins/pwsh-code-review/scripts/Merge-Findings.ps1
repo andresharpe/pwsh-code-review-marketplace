@@ -68,7 +68,7 @@ try {
     $static = if (Test-Path $staticPath) {
         Get-Content $staticPath -Raw | ConvertFrom-Json -AsHashtable
     } else {
-        @{ psscriptanalyzer = @(); compatibility = @(); injection_hunter = @(); gitleaks = @(); pester = $null; markdownlint = @(); test_brittleness = @(); template_substitution = @(); test_coverage = @(); eslint = @(); tools_missing = @() }
+        @{ psscriptanalyzer = @(); compatibility = @(); injection_hunter = @(); gitleaks = @(); pester = $null; markdownlint = @(); test_brittleness = @(); template_substitution = @(); test_coverage = @(); eslint = @(); tools_missing = @(); tools_errors = @() }
     }
 
     # Load calibrated agent findings
@@ -356,6 +356,17 @@ try {
             if ($hints.ContainsKey($tool)) {
                 [void]$sb.AppendLine("  - To install ``$tool``: ``$($hints[$tool])``")
             }
+        }
+    }
+    # Tools that ran but failed at runtime — surface so a "0 findings"
+    # result is never silently a tool failure.
+    if ($static.ContainsKey('tools_errors') -and @($static.tools_errors).Count -gt 0) {
+        [void]$sb.AppendLine("- Tools that errored during the run:")
+        foreach ($te in @($static.tools_errors)) {
+            $msg = ($te.message ?? '').ToString().Trim()
+            if ($msg.Length -gt 200) { $msg = $msg.Substring(0, 197) + '...' }
+            $msg = $msg -replace '\r?\n', ' '
+            [void]$sb.AppendLine("  - ``$($te.tool)`` (exit $($te.exit)): $msg")
         }
     }
     [void]$sb.AppendLine()

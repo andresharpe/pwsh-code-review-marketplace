@@ -40,7 +40,7 @@ Run `scripts/Invoke-StaticAnalysis.ps1` against the diff scope. This runs in par
 - Gitleaks (if available on `$PATH`)
 - Pester (only if test files are touched, or run lightweight test discovery)
 - markdownlint, actionlint, editorconfig-checker (if available, only on relevant file types)
-- eslint (if available — only when the diff touches `.js` / `.mjs` / `.cjs` / `.ts` / `.tsx` AND `eslint` is on PATH or appears in the project's `package.json`)
+- eslint (if available — only when the diff touches `.js` / `.mjs` / `.cjs` / `.ts` / `.tsx` AND `eslint` is on PATH OR is declared as a dependency / devDependency in the project's `package.json`. The runner uses `npx --no-install eslint` for the package.json case so it never silently downloads from the registry.)
 
 The output is a JSON document at `.pwsh-review/cache/static-findings.json`:
 
