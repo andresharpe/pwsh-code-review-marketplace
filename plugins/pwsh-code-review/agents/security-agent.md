@@ -43,6 +43,9 @@ You do **not** own:
 - New `Add-Type -TypeDefinition <concatenated string>`: flag (`blocker`, conf 90). Compile-time injection.
 - New `[scriptblock]::Create($string)` where `$string` includes external input: flag (`blocker`, conf 95).
 - New `& ([scriptblock]::Create(...))`: flag (`blocker`, conf 95).
+- New `& $variable` or `. $variable` where `$variable` is derived from external input (parameter, file, env var, network response, LLM output) without validation against an allowlist: flag (`blocker`, conf 90). The safe pattern validates `$variable` against a fixed set of known-safe values (e.g. `$tools.ContainsKey($variable)`) before invoking. Cite the source of `$variable` and the call site in `evidence[]`.
+- New `. $scriptPath` (dot-source) where `$scriptPath` is not a hardcoded literal, a `Join-Path $PSScriptRoot ...` against a fixed leaf, or otherwise constrained to a known directory: flag (`blocker`, conf 90). Dot-sourcing executes the target file in the caller's scope, so a hijacked path is arbitrary code execution.
+- New `Import-Module $modulePath` where `$modulePath` is a variable whose path is not anchored to a known-safe directory: flag (`major`, conf 85). Module loading runs init code; an attacker-controlled path runs attacker-controlled init.
 
 ### Credentials
 
@@ -54,6 +57,7 @@ You do **not** own:
 - Hard-coded API key, token, connection string, or password literal: flag (`blocker`, conf 100). Gitleaks should catch this; you flag it as a backup.
 - New environment variable read for a credential without validation that it is not empty: flag (`minor`, conf 75).
 - Logging a `[PSCredential]` or `[SecureString]` (e.g. `Write-Verbose $cred`): flag (`major`, conf 90). Even verbose logs leak.
+- New double-quoted string interpolating a credential, secret, token, or `$env:` variable matching `*KEY*`, `*SECRET*`, `*TOKEN*`, `*PASSWORD*` into a log/output/error message — for example `"Path: $env:API_KEY"`, `Write-Verbose "Auth: $($creds.Password)"`, `throw "Token $apiKey expired"`: flag (`major`, conf 85). Even one bug in upstream code that puts a secret in the variable lands the secret in every log line. Recommend single-quoted strings + explicit non-secret fields, or `'<redacted>'` placeholders.
 
 ### Native command injection
 
@@ -73,6 +77,22 @@ You do **not** own:
 - New `Invoke-RestMethod -SkipCertificateCheck`: flag (`major`, conf 90).
 - New `Invoke-Command -ComputerName $x -Credential $cred` with `$x` from external input: flag (`major`, conf 85). Credential delegation to attacker-controlled host.
 - New `Enter-PSSession` against unvalidated host: same.
+
+### Path cmdlet wildcard injection (`-Path` vs `-LiteralPath`)
+
+PowerShell's path-accepting cmdlets default to `-Path`, which expands `*`, `?`, and `[...]` as wildcards. When the path comes from external input, an attacker who controls the path also controls the wildcard expansion. `-LiteralPath` disables the expansion.
+
+The cmdlets at risk:
+
+`Test-Path`, `Get-Content`, `Get-Item`, `Get-ChildItem`, `Set-Content`, `Add-Content`, `Out-File`, `Remove-Item`, `Move-Item`, `Copy-Item`, `Rename-Item`, `New-Item` (when checking existence), `Resolve-Path`, `Convert-Path`, `Import-Csv`, `Export-Csv`, `Import-Clixml`, `Export-Clixml`.
+
+`Join-Path` is **not** at risk — it does string concatenation only, does not resolve or expand paths, and does not accept `-LiteralPath`. The risk lives at the consuming cmdlet that receives the joined string.
+
+Rules:
+
+- New `Get-Content $path` / `Test-Path $path` / `Get-Item $path` / `Get-ChildItem $path` etc. where `$path` is derived from external input (parameter without `[ValidateScript]`, env var, file content, network response) and not passed to `-LiteralPath`: flag (`major`, conf 85). For `Remove-Item` and `Move-Item` this becomes (`blocker`, conf 90) because wildcard expansion can match files outside the intended target.
+- Cite both the source of `$path` and the call site in `evidence[]`.
+- The safe pattern is `-LiteralPath $path` (or `-LiteralPath` plus an `Resolve-Path -LiteralPath` prefix-check against an allowed root for traversal-class concerns). If the project's `standards.md` or `patterns/` already documents `-LiteralPath` as the convention, cite the rule.
 
 ### MOTW and downloads
 
