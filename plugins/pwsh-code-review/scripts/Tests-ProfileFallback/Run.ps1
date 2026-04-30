@@ -119,8 +119,17 @@ try {
     # Run the fallback. Base ref is 'main' (no remote in this temp repo).
     $r = & $scriptPath -RepoRoot $temp -BaseRef 'main'
 
-    Assert-True 'Restored count is 8 (5 docs + 1 settings + 1 config + 1 lock + 2 patterns - 1 from glossary count)' `
-        ($r.RestoredCount -ge 7) "got $($r.RestoredCount)"
+    # Six canonical files (architecture.md, standards.md, glossary.md,
+    # PSScriptAnalyzerSettings.psd1, config.psd1, profile.lock.json) plus
+    # two patterns/* files = exactly 8 restores. Use exact equality so a
+    # missed restore can't slip through unnoticed.
+    Assert-True 'Restored count is exactly 8 (6 canonical + 2 patterns)' `
+        ($r.RestoredCount -eq 8) "got $($r.RestoredCount)"
+    Assert-True 'LocallyMissing equals RestoredCount when base carries everything' `
+        ($r.LocallyMissing -eq $r.RestoredCount) `
+        "LocallyMissing=$($r.LocallyMissing) RestoredCount=$($r.RestoredCount)"
+    Assert-True 'Reason is "restored from base" on full recovery' `
+        ($r.Reason -eq 'restored from base') "got '$($r.Reason)'"
     foreach ($f in 'architecture.md','standards.md','glossary.md','PSScriptAnalyzerSettings.psd1','config.psd1','profile.lock.json') {
         Assert-True "Restored .pwsh-review/$f exists" `
             (Test-Path -LiteralPath (Join-Path $temp ".pwsh-review/$f"))
@@ -131,9 +140,12 @@ try {
         (Test-Path -LiteralPath (Join-Path $temp '.pwsh-review/patterns/pattern-error-handling.ps1'))
 
     # --- Scenario 2: idempotency ----
-    # Running again must be a no-op (no files restored, since they all exist now).
+    # Running again must be a no-op (nothing missing -> nothing restored).
     $r2 = & $scriptPath -RepoRoot $temp -BaseRef 'main'
     Assert-True 'Re-run is idempotent (RestoredCount = 0)' ($r2.RestoredCount -eq 0)
+    Assert-True 'Re-run reports LocallyMissing = 0' ($r2.LocallyMissing -eq 0)
+    Assert-True 'Re-run Reason is "profile already complete"' `
+        ($r2.Reason -eq 'profile already complete') "got '$($r2.Reason)'"
 
     # --- Scenario 3: deliberate local edit is preserved ----
     # Author has edited standards.md on the PR branch. The fallback must NOT
@@ -153,6 +165,62 @@ try {
     $r4 = & $scriptPath -RepoRoot $temp -BaseRef 'origin/does-not-exist'
     Assert-True 'Missing base ref returns RestoredCount=0 with reason' `
         (($r4.RestoredCount -eq 0) -and ($r4.Reason -match 'did not resolve'))
+
+    # --- Scenario 5: file missing locally AND on base ----
+    # Build a sibling base ref `base-no-glossary` that carries everything
+    # except glossary.md. Then ask Resolve-Profile to recover from it with
+    # glossary.md missing locally as well. Reason must clearly distinguish
+    # this from "everything fine" so callers can tell whether to abort.
+    Push-Location $temp
+    try {
+        # Reset to a clean main so the new branch starts from a known state
+        # rather than picking up working-tree removals from earlier scenarios.
+        git checkout -q -- . 2>&1 | Out-Null
+        git clean -fd 2>&1 | Out-Null
+        git checkout -q main 2>&1 | Out-Null
+        git checkout -q -b base-no-glossary 2>&1 | Out-Null
+        Remove-Item -LiteralPath (Join-Path $temp '.pwsh-review/glossary.md') `
+            -ErrorAction SilentlyContinue
+    } finally {
+        Pop-Location
+    }
+    Add-AndCommit -Path $temp -Message 'chore: drop glossary on base-no-glossary'
+
+    # Switch back to pr (where profile is naturally absent because pr forked
+    # before main added the profile).
+    Push-Location $temp
+    try {
+        git checkout -q pr 2>&1 | Out-Null
+        # And drop any restored files that may be on disk from earlier scenarios.
+        if (Test-Path -LiteralPath (Join-Path $temp '.pwsh-review')) {
+            Remove-Item -LiteralPath (Join-Path $temp '.pwsh-review') -Recurse -Force
+        }
+    } finally {
+        Pop-Location
+    }
+    $r5 = & $scriptPath -RepoRoot $temp -BaseRef 'base-no-glossary'
+    Assert-True 'Scenario 5: at least one file still missing -> Reason flags it' `
+        ($r5.Reason -match 'missing locally and on base') "got '$($r5.Reason)'"
+    Assert-True 'Scenario 5: LocallyMissing > RestoredCount when base lacks the file' `
+        ($r5.LocallyMissing -gt $r5.RestoredCount) `
+        "LocallyMissing=$($r5.LocallyMissing) RestoredCount=$($r5.RestoredCount)"
+
+    # --- Scenario 6: Information-stream silence by default ----
+    # The Restored summary goes to the Information stream. Default
+    # $InformationPreference is SilentlyContinue, so callers do not see
+    # it unless they opt in via -InformationAction.
+    Push-Location $temp
+    try {
+        git checkout -q pr 2>&1 | Out-Null
+        Remove-Item -LiteralPath (Join-Path $temp '.pwsh-review/architecture.md') `
+            -ErrorAction SilentlyContinue
+    } finally {
+        Pop-Location
+    }
+    $captured6 = & $scriptPath -RepoRoot $temp -BaseRef 'main' 6>&1 |
+        Where-Object { $_ -is [System.Management.Automation.InformationRecord] }
+    Assert-True 'Scenario 6: Information records are emitted (visible with -InformationAction Continue or 6>&1)' `
+        ($captured6.Count -gt 0) "got $($captured6.Count)"
 } finally {
     if (Test-Path $temp) { Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue }
 }

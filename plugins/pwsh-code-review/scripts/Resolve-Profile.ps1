@@ -21,8 +21,10 @@
 
     The restored files appear as untracked in `git status` and would not
     accidentally land in a commit unless the author explicitly stages
-    them. The script prints a message naming each file it restored so the
-    author can spot what is happening.
+    them. The script emits an `Information` stream record naming each
+    file it restored so the author can spot what is happening; callers
+    that want silence can pass `-InformationAction SilentlyContinue` or
+    set `$InformationPreference`.
 
 .PARAMETER RepoRoot
     Repository root.
@@ -33,7 +35,10 @@
     resolves it via `gh pr view --json baseRefName`).
 
 .OUTPUTS
-    [pscustomobject] with the restored file count and the list of paths.
+    [pscustomobject] with the restored file count, the list of paths, a
+    machine-readable `Reason`, and `LocallyMissing` (the count of
+    canonical files absent locally — distinct from `RestoredCount` so
+    callers can tell "fully complete" from "partially recovered").
 
 .EXAMPLE
     Resolve-Profile.ps1 -BaseRef origin/main
@@ -62,7 +67,8 @@ $canonicalFiles = @(
     'profile.lock.json'
 )
 
-$restored = @()
+$restored        = @()
+$locallyMissing  = 0
 
 # Run from the repo root so `git show` resolves <ref>:<path> against the
 # correct work tree.
@@ -73,9 +79,10 @@ try {
     $null = git rev-parse --git-dir 2>$null
     if ($LASTEXITCODE -ne 0) {
         return [pscustomobject]@{
-            RestoredCount = 0
-            Restored      = @()
-            Reason        = 'not a git repo'
+            RestoredCount   = 0
+            Restored        = @()
+            LocallyMissing  = 0
+            Reason          = 'not a git repo'
         }
     }
 
@@ -84,24 +91,31 @@ try {
     $null = git rev-parse --verify "${BaseRef}^{commit}" 2>$null
     if ($LASTEXITCODE -ne 0) {
         return [pscustomobject]@{
-            RestoredCount = 0
-            Restored      = @()
-            Reason        = "base ref '$BaseRef' did not resolve"
+            RestoredCount   = 0
+            Restored        = @()
+            LocallyMissing  = 0
+            Reason          = "base ref '$BaseRef' did not resolve"
         }
     }
 
-    # Restore canonical profile files.
+    # Restore canonical profile files. Track files that are missing locally
+    # separately from files we successfully restored — they're not the same
+    # number when the base ref also lacks the file.
     foreach ($rel in $canonicalFiles) {
         $localPath = Join-Path $RepoRoot ".pwsh-review/$rel"
         if (Test-Path -LiteralPath $localPath) { continue }
+        $locallyMissing++
         $content = git show "${BaseRef}:.pwsh-review/$rel" 2>$null
         if ($LASTEXITCODE -ne 0) { continue }
         $dir = Split-Path -Parent $localPath
         if (-not (Test-Path -LiteralPath $dir)) {
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
         }
-        # Preserve the original encoding by writing through Set-Content -Encoding utf8NoBOM
-        # which matches what the bootstrap and the editor's "save" produce.
+        # Write as utf8NoBOM to match the project's canonical encoding
+        # (bootstrap and editor saves produce the same). This normalises
+        # rather than preserves the byte-exact original — fine because the
+        # profile files are text we control and the encoding contract is
+        # "no BOM, UTF-8" across the board.
         $content | Set-Content -LiteralPath $localPath -Encoding utf8NoBOM
         $restored += ".pwsh-review/$rel"
     }
@@ -114,6 +128,7 @@ try {
             if (-not $rel) { continue }
             $localPath = Join-Path $RepoRoot $rel
             if (Test-Path -LiteralPath $localPath) { continue }
+            $locallyMissing++
             $content = git show "${BaseRef}:$rel" 2>$null
             if ($LASTEXITCODE -ne 0) { continue }
             $dir = Split-Path -Parent $localPath
@@ -125,16 +140,34 @@ try {
         }
     }
 
+    # Emit operator-facing summary on the Information stream so callers can
+    # silence it via `-InformationAction SilentlyContinue` or by setting
+    # $InformationPreference. Default $InformationPreference is
+    # 'SilentlyContinue', so callers must opt in to see the message.
     if ($restored.Count -gt 0) {
-        Write-Host "Restored $($restored.Count) profile file(s) from ${BaseRef}:" -ForegroundColor Cyan
-        foreach ($p in $restored) { Write-Host "  $p" -ForegroundColor DarkCyan }
-        Write-Host "These are untracked on this branch; do not commit them." -ForegroundColor DarkYellow
+        Write-Information "Restored $($restored.Count) profile file(s) from ${BaseRef}:"
+        foreach ($p in $restored) { Write-Information "  $p" }
+        Write-Information 'These are untracked on this branch; do not commit them.'
+    }
+
+    # Compute Reason that distinguishes the three meaningful states:
+    #   - profile already complete    : nothing was missing locally
+    #   - restored from base          : everything missing was recovered
+    #   - missing locally and on base : at least one file missing locally
+    #                                   could not be restored from base
+    $reason = if ($locallyMissing -eq 0) {
+        'profile already complete'
+    } elseif ($restored.Count -eq $locallyMissing) {
+        'restored from base'
+    } else {
+        "missing locally and on base ($($locallyMissing - $restored.Count) file(s) still absent)"
     }
 
     return [pscustomobject]@{
-        RestoredCount = $restored.Count
-        Restored      = $restored
-        Reason        = if ($restored.Count -eq 0) { 'profile already complete' } else { 'restored from base' }
+        RestoredCount   = $restored.Count
+        Restored        = $restored
+        LocallyMissing  = $locallyMissing
+        Reason          = $reason
     }
 } finally {
     Pop-Location
