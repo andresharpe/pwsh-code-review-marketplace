@@ -594,8 +594,10 @@ function Test-AstContainsPrereqProbe {
 
 function Test-Rule006 {
     # PWSH-TEST-006: an `if (Test-Path ...) { ...assertions... }` with no
-    # else clause inside an `It` body. When the probe returns false the
-    # test silently passes — false-positive coverage.
+    # else clause inside any Pester test scriptblock (Describe / Context / It
+    # / Before* / After*). When the probe returns false the test silently
+    # passes — false-positive coverage. The bug pattern applies in any of
+    # these blocks, not only `It`.
     param(
         [Parameter(Mandatory)]$Node,
         [Parameter(Mandatory)][string]$RelativePath
@@ -621,16 +623,29 @@ function Test-Rule006 {
 
 function Test-Rule007 {
     # PWSH-TEST-007: `function <KnownCmdletName> { ... }` defined at script
-    # scope (not inside another function) inside a test file, where the
-    # function's param block declares zero parameters. Production code that
-    # invokes the real cmdlet with extra arguments will pass them straight
-    # through to a no-op.
+    # scope (not inside another function and not inside a Pester block)
+    # inside a test file, where the function's param block declares zero
+    # parameters. Production code that invokes the real cmdlet with extra
+    # arguments will pass them straight through to a no-op.
     param(
         [Parameter(Mandatory)]$Node,
         [Parameter(Mandatory)][string]$RelativePath
     )
     if ($Node -isnot [System.Management.Automation.Language.FunctionDefinitionAst]) { return $null }
     if ($script:MockableCmdlets -notcontains $Node.Name) { return $null }
+
+    # Only flag script-scope overrides. Skip helpers nested inside another
+    # function definition.
+    $ancestor = $Node.Parent
+    while ($ancestor) {
+        if ($ancestor -is [System.Management.Automation.Language.FunctionDefinitionAst]) { return $null }
+        $ancestor = $ancestor.Parent
+    }
+
+    # Skip overrides declared inside Pester blocks (Describe / Context / It /
+    # Before* / After*). Those are scoped to the surrounding describe and are
+    # a legitimate Pester pattern.
+    if (Test-IsInTestBlock -Node $Node) { return $null }
 
     $paramCount = 0
     if ($Node.Body -and $Node.Body.ParamBlock -and $Node.Body.ParamBlock.Parameters) {
@@ -682,30 +697,58 @@ function Test-Rule008 {
     if (-not (Test-IsInTestBlock -Node $Node)) { return $null }
     if (Test-IsInsideFinallyBlock -Node $Node) { return $null }
 
-    # Walk up to the enclosing StatementBlockAst (the one holding this command's
-    # statement). Look for an assertion that appears at an earlier line.
+    # Walk up to the enclosing block that holds this Remove-Item as a
+    # statement. The block can be a StatementBlockAst (`{ ... }` body of try /
+    # catch / finally / if / foreach) or a NamedBlockAst (the implicit / named
+    # `begin`/`process`/`end` block of a script or scriptblock — Pester `It`
+    # bodies live in the implicit end block). Both expose `.Statements`.
     $stmt = $Node
     while ($stmt -and $stmt -isnot [System.Management.Automation.Language.PipelineAst]) {
         $stmt = $stmt.Parent
     }
     if (-not $stmt) { return $null }
     $block = $stmt.Parent
-    while ($block -and $block -isnot [System.Management.Automation.Language.StatementBlockAst] `
-                  -and $block -isnot [System.Management.Automation.Language.ScriptBlockAst]) {
+    while ($block -and `
+           $block -isnot [System.Management.Automation.Language.StatementBlockAst] -and `
+           $block -isnot [System.Management.Automation.Language.NamedBlockAst]) {
         $block = $block.Parent
     }
     if (-not $block) { return $null }
 
-    $myLine = $Node.Extent.StartLineNumber
-    $earlierAssertion = $block.FindAll({
-        param($n)
-        if ($n -isnot [System.Management.Automation.Language.CommandAst]) { return $false }
-        if ($n.Extent.StartLineNumber -ge $myLine) { return $false }
-        $cn = $n.GetCommandName()
-        if (-not $cn) { return $false }
-        return ($cn -eq 'Should' -or $cn -like 'Assert-*')
-    }, $true)
-    if (@($earlierAssertion).Count -eq 0) { return $null }
+    # Walk up from $stmt until its direct parent is $block; that's the
+    # top-level statement of the block holding this Remove-Item.
+    $currentStatement = $stmt
+    while ($currentStatement -and -not [object]::ReferenceEquals($currentStatement.Parent, $block)) {
+        $currentStatement = $currentStatement.Parent
+    }
+    if (-not $currentStatement) { return $null }
+
+    # Iterate statements in order; for each earlier statement, look for a
+    # Should/Assert-* — but exclude descendants inside a nested ScriptBlockAst
+    # (a delayed scriptblock argument) since those don't run as part of the
+    # surrounding statement's lexical execution flow.
+    $earlierAssertionFound = $false
+    foreach ($statement in @($block.Statements)) {
+        if ([object]::ReferenceEquals($statement, $currentStatement)) { break }
+        $hits = @($statement.FindAll({
+            param($n)
+            if ($n -isnot [System.Management.Automation.Language.CommandAst]) { return $false }
+            $a = $n.Parent
+            while ($a -and -not [object]::ReferenceEquals($a, $statement)) {
+                if ($a -is [System.Management.Automation.Language.ScriptBlockAst]) { return $false }
+                $a = $a.Parent
+            }
+            if (-not [object]::ReferenceEquals($a, $statement)) { return $false }
+            $cn = $n.GetCommandName()
+            if (-not $cn) { return $false }
+            return ($cn -eq 'Should' -or $cn -like 'Assert-*')
+        }, $true))
+        if ($hits.Count -gt 0) {
+            $earlierAssertionFound = $true
+            break
+        }
+    }
+    if (-not $earlierAssertionFound) { return $null }
 
     $msg = "``Remove-Item`` runs after an assertion but is not inside a ``finally`` clause. If the assertion throws (StrictMode / ``-ErrorAction Stop``), the cleanup is skipped and test state leaks. Wrap the create/assert in ``try`` and put the cleanup in ``finally``."
     return (New-Finding -Rule 'PWSH-TEST-008' -File $RelativePath `
@@ -714,15 +757,24 @@ function Test-Rule008 {
 }
 
 function Test-PatternHasUnescapedDollarVariable {
-    # Returns $true if $Pattern contains a `$` that is NOT preceded by `\`
-    # AND IS followed by a word character (letter, digit, underscore).
+    # Returns $true if $Pattern contains a `$` that is NOT regex-escaped AND
+    # IS followed by a word character (letter, digit, underscore). A `$` is
+    # escaped only when the run of consecutive `\` immediately preceding it
+    # has ODD length: `\$` is escaped, `\\$` is NOT (the first `\` escapes
+    # the second), `\\\$` is escaped again, and so on.
     # That is exactly the "I forgot to escape the regex anchor" footgun for
     # assertions that should match literal `$variable` text.
     param([Parameter(Mandatory)][string]$Pattern)
     for ($i = 0; $i -lt $Pattern.Length - 1; $i++) {
         if ($Pattern[$i] -ne '$') { continue }
-        # Preceded by backslash? (Already escaped.)
-        if ($i -gt 0 -and $Pattern[$i - 1] -eq '\') { continue }
+
+        $backslashCount = 0
+        for ($j = $i - 1; $j -ge 0 -and $Pattern[$j] -eq '\'; $j--) {
+            $backslashCount++
+        }
+        # `$` is regex-escaped only when preceded by an odd number of `\`.
+        if (($backslashCount % 2) -eq 1) { continue }
+
         $next = $Pattern[$i + 1]
         if ([char]::IsLetterOrDigit($next) -or $next -eq '_') { return $true }
     }

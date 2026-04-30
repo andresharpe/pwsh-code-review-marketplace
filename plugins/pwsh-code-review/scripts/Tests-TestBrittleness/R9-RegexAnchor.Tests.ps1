@@ -15,4 +15,13 @@ Describe 'R9' {
         # POSITIVE: pattern contains `$value` with `$` unescaped.
         Assert-True -Condition ($source -match 'Where-Object \{ \$_ -eq $value \}')
     }
+
+    It 'is misled by a literal backslash before `$Name`' {
+        $source = '\$Name = "value"'
+        # POSITIVE: pattern has `\\$Name` — the first `\` escapes the second,
+        # so `$` is NOT regex-escaped. Edge case caught by counting the run
+        # of consecutive backslashes (odd = escaped, even = not). The leading
+        # `/` avoids tripping PWSH-TEST-005 (Windows-only path heuristic).
+        $source | Should -Match '/x \\$Name'
+    }
 }
