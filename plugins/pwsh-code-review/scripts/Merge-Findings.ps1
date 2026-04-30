@@ -398,10 +398,29 @@ try {
     $markdown = $sb.ToString()
     $markdown | Set-Content $OutputPath -Encoding utf8NoBOM
 
+    # Also emit the post-filter, post-cluster, sorted findings as JSON so
+    # downstream posting tools (Post-PrReview.ps1) can consume the same
+    # structure without re-running the filter/cluster pipeline.
+    $mergedJsonPath = Join-Path $cacheDir 'merged-findings.json'
+    $verdict = if ($counts.blocker -gt 0) { 'needs rework' }
+               elseif ($counts.major -gt 0) { 'fix majors first' }
+               else { 'ship' }
+    $mergedPayload = [ordered]@{
+        schema_version = '1'
+        plugin_version = $pluginVersion
+        generated      = (Get-Date).ToUniversalTime().ToString('o')
+        counts         = $counts
+        verdict        = $verdict
+        findings       = @($sorted)
+    }
+    $mergedPayload | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $mergedJsonPath -Encoding utf8NoBOM
+
     [pscustomobject]@{
         OutputPath           = $OutputPath
+        MergedJsonPath       = $mergedJsonPath
         TotalFindings        = @($sorted).Count
         Counts               = $counts
+        Verdict              = $verdict
         StaticFindings       = @($staticAsFindings).Count
         AgentFindingsRaw     = @($agentFindings).Count
         AgentFindingsKept    = @($clustered).Count
