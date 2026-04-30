@@ -23,17 +23,37 @@ if [ ! -f "$review_script" ]; then
     exit 0
 fi
 
-# Skip when there's nothing to review (e.g. pushing a tag, or the local
-# branch is already at parity with the remote tracking ref).
-local_sha="$(git rev-parse HEAD 2>/dev/null || true)"
-upstream_sha="$(git rev-parse '@{u}' 2>/dev/null || true)"
-if [ -n "$local_sha" ] && [ "$local_sha" = "$upstream_sha" ]; then
-    echo "[pwsh-review] no commits ahead of upstream -- skipping review."
+# Skip when there's nothing to review. Git passes `<local_ref> <local_oid>
+# <remote_ref> <remote_oid>` for each ref being pushed on stdin. Skip
+# unless at least one branch ref's local oid differs from its remote oid;
+# this excludes tag-only pushes, deletes, and re-pushes of already-pushed
+# branches.
+zero_oid='0000000000000000000000000000000000000000'
+has_branch_commits_to_push=0
+while read -r local_ref local_oid remote_ref remote_oid; do
+    [ -n "$local_ref" ] || continue
+
+    # Ignore deletes (local_oid is all-zeros) and non-branch refs.
+    if [ "$local_oid" = "$zero_oid" ]; then
+        continue
+    fi
+    case "$local_ref" in
+        refs/heads/*)
+            if [ "$local_oid" != "$remote_oid" ]; then
+                has_branch_commits_to_push=1
+                break
+            fi
+            ;;
+    esac
+done
+
+if [ "$has_branch_commits_to_push" -eq 0 ]; then
+    echo "[pwsh-review] no branch commits being pushed -- skipping review."
     exit 0
 fi
 
 if ! command -v pwsh >/dev/null 2>&1; then
-    echo "[pwsh-review] pwsh not on PATH -- skipping hook (install PowerShell 7+)." >&2
+    echo "[pwsh-review] pwsh not on PATH -- skipping hook (install PowerShell 7.4+)." >&2
     exit 0
 fi
 

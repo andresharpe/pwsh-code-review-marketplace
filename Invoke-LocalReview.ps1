@@ -82,7 +82,10 @@ switch ($verdict) {
         exit 1
     }
     default {
-        Write-Warning "[pwsh-review] unknown verdict '$verdict'. Push allowed; investigate."
-        exit 0
+        # Fail closed. An unknown verdict means the merger schema changed,
+        # the JSON was partially written, or some other unexpected state.
+        # Allowing the push in that case would silently bypass the gate.
+        Write-Error "[pwsh-review] unknown verdict '$verdict'. Refusing to gate on a value the schema does not recognise -- push refused. Inspect $mergedPath."
+        exit 1
     }
 }
