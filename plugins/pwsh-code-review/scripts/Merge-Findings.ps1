@@ -63,6 +63,92 @@ try {
     if ($ConfidenceThreshold -eq 0) { $ConfidenceThreshold = $config.ConfidenceThreshold ?? 80 }
     if ($NitCap -eq 0) { $NitCap = $config.NitCap ?? 3 }
 
+    # Per-rule severity override. Lets a project downgrade (or upgrade) a
+    # specific static-pass rule that does not match its codebase. The
+    # canonical case is `InjectionRisk.*` — InjectionHunter fires on safe
+    # patterns like allowlist dispatch via $hash.$key (where $key comes from
+    # a literal `[ordered]@{}` in the same function) and whitelist
+    # sanitisation with literal regexes. Without an override these get
+    # auto-classified as `blocker` and unfairly REQUEST_CHANGES the PR.
+    #
+    # config.psd1 shape:
+    #   RuleSeverityOverrides = @{
+    #       'InjectionRisk.UnsafeEscaping'        = 'minor'
+    #       'InjectionRisk.StaticPropertyInjection' = 'minor'
+    #   }
+    # Validate override values against the known severity vocabulary so a
+    # typo (e.g. 'minro' instead of 'minor') produces a visible warning
+    # rather than silently dropping the finding from the verdict's count.
+    # Invalid entries are skipped; valid ones survive.
+    $validSeverities = @('blocker', 'major', 'minor', 'nit', 'question', 'praise')
+    $ruleSeverityOverrides = @{}
+    if ($config.ContainsKey('RuleSeverityOverrides') -and $config.RuleSeverityOverrides -is [hashtable]) {
+        foreach ($entry in $config.RuleSeverityOverrides.GetEnumerator()) {
+            $ruleName = [string]$entry.Key
+            $sev      = [string]$entry.Value
+            if ($sev -in $validSeverities) {
+                $ruleSeverityOverrides[$ruleName] = $sev
+            } else {
+                $valid = $validSeverities -join ', '
+                Write-Warning "RuleSeverityOverrides['$ruleName']='$sev' is not a recognised severity. Expected one of: $valid. Skipping override; rule will keep its default severity."
+            }
+        }
+    }
+
+    # Hunk-scope filter for static-pass findings. The static layer (PSSA,
+    # compatibility, InjectionHunter, eslint, heuristics) scans entire files
+    # because its rules don't track line ranges. On a PR review, a change
+    # to lines 200-210 should not surface findings on lines 50, 80, 150,
+    # etc. — those are pre-existing and out of scope. Drop any static
+    # finding whose line falls outside every hunk for its file.
+    #
+    # Build the index from diff-context.json. When diff-context is absent
+    # (e.g. -All bootstrap mode), the filter is disabled and all findings
+    # carry through.
+    $hunksByFile  = @{}
+    $hunkFilterOn = $false
+    $diffContextPathForHunks = Join-Path $cacheDir 'diff-context.json'
+    if (Test-Path $diffContextPathForHunks) {
+        try {
+            $dcForHunks = Get-Content $diffContextPathForHunks -Raw | ConvertFrom-Json -AsHashtable
+            if ($dcForHunks.ContainsKey('changed_hunks') -and $dcForHunks.changed_hunks) {
+                foreach ($h in $dcForHunks.changed_hunks) {
+                    $f = $h.file
+                    if (-not $hunksByFile.ContainsKey($f)) { $hunksByFile[$f] = @() }
+                    $hunksByFile[$f] += @{ start = [int]$h.line_start; end = [int]$h.line_end }
+                }
+                # Only enable the filter when the cache actually carried a
+                # populated hunk list. Empty hunks means no diff to scope to.
+                $hunkFilterOn = ($hunksByFile.Count -gt 0)
+            }
+        } catch {
+            Write-Verbose "Could not read $diffContextPathForHunks for hunk filter: $($_.Exception.Message)"
+        }
+    }
+
+    function Test-StaticFindingInDiffScope {
+        # Returns $true when the static finding falls inside a hunk of the
+        # current diff (or when the hunk filter is disabled). File-level
+        # findings (no line) are dropped from PR-scope review — they are
+        # almost always pre-existing structural issues (BOM, file encoding)
+        # that don't belong on a review of unrelated changes; the bootstrap
+        # flow surfaces them once at the project level.
+        param([string]$File, [int]$Line)
+        if (-not $hunkFilterOn) { return $true }
+        if (-not $File) { return $false }
+        if ($Line -le 0) { return $false }
+        $rel = $File
+        foreach ($pat in @("$RepoRoot\", "$RepoRoot/")) {
+            if ($rel.StartsWith($pat)) { $rel = $rel.Substring($pat.Length); break }
+        }
+        $rel = $rel -replace '\\', '/'
+        if (-not $hunksByFile.ContainsKey($rel)) { return $false }
+        foreach ($h in $hunksByFile[$rel]) {
+            if ($Line -ge $h.start -and $Line -le $h.end) { return $true }
+        }
+        return $false
+    }
+
     # Load static findings
     $staticPath = Join-Path $cacheDir 'static-findings.json'
     $static = if (Test-Path $staticPath) {
@@ -109,11 +195,25 @@ try {
     # ESLint reports are deterministic (linter output, confidence 100), so they
     # join the deterministic-static bucket alongside PSSA / compatibility.
     $heuristicSources = @('test_brittleness', 'template_substitution', 'test_coverage')
+    $droppedByHunkFilter = 0
     foreach ($cat in @('psscriptanalyzer', 'compatibility', 'injection_hunter', 'eslint') + $heuristicSources) {
         foreach ($f in @($static[$cat])) {
             if (-not $f) { continue }
+            # Hunk-scope filter: drop static findings outside the diff scope.
+            $line = if ($f.line) { [int]$f.line } else { 0 }
+            if (-not (Test-StaticFindingInDiffScope -File $f.file -Line $line)) {
+                $droppedByHunkFilter++
+                continue
+            }
             $sev = $staticToOur[$f.severity] ?? 'minor'
             if ($cat -eq 'injection_hunter') { $sev = 'blocker' }
+            # Per-rule severity override (config.psd1 RuleSeverityOverrides).
+            # Looks up by `rule_name` so projects can target specific noisy
+            # rules (e.g. InjectionRisk.UnsafeEscaping) without disabling
+            # the whole rule class.
+            if ($f.rule_name -and $ruleSeverityOverrides.ContainsKey([string]$f.rule_name)) {
+                $sev = [string]$ruleSeverityOverrides[[string]$f.rule_name]
+            }
             # Heuristic sources carry a per-finding `confidence` field;
             # deterministic sources are 100 by default.
             $conf = if (($cat -in $heuristicSources) -and $f.confidence) { [int]$f.confidence } else { 100 }
@@ -461,16 +561,17 @@ try {
     $mergedPayload | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $mergedJsonPath -Encoding utf8NoBOM
 
     [pscustomobject]@{
-        OutputPath           = $OutputPath
-        MergedJsonPath       = $mergedJsonPath
-        TotalFindings        = @($sorted).Count
-        Counts               = $counts
-        Verdict              = $verdict
-        StaticFindings       = @($staticAsFindings).Count
-        AgentFindingsRaw     = @($agentFindings).Count
-        AgentFindingsKept    = @($clustered).Count
-        ConfidenceThreshold  = $ConfidenceThreshold
-        NitCap               = $NitCap
+        OutputPath               = $OutputPath
+        MergedJsonPath           = $mergedJsonPath
+        TotalFindings            = @($sorted).Count
+        Counts                   = $counts
+        Verdict                  = $verdict
+        StaticFindings           = @($staticAsFindings).Count
+        StaticDroppedByHunkFilter = $droppedByHunkFilter
+        AgentFindingsRaw         = @($agentFindings).Count
+        AgentFindingsKept        = @($clustered).Count
+        ConfidenceThreshold      = $ConfidenceThreshold
+        NitCap                   = $NitCap
     }
 } finally {
     Pop-Location
