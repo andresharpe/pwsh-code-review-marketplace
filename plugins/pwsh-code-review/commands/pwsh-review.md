@@ -151,9 +151,24 @@ Run `scripts/Merge-Findings.ps1`:
 4. Cap nits at the configured limit (default 3).
 5. Sort: blocker, major, minor, nit, question, praise.
 6. Within severity, sort by file path then line number.
-7. Render to Markdown.
+7. Compute the verdict: `ship` (0 blockers, 0 majors), `fix majors first` (0 blockers, >0 majors), `needs rework` (>0 blockers).
+8. Render to Markdown at `.pwsh-review/cache/review.md`.
+9. Write the post-filter / post-cluster sorted findings as JSON to `.pwsh-review/cache/merged-findings.json` for downstream tools.
 
-Emit to terminal by default. With `--comment` and `--pr`, post as a single review comment via `gh pr comment`.
+Emit the markdown to terminal by default.
+
+## Phase 7: post inline review (only with `--comment` and `--pr`)
+
+Run `scripts/Post-PrReview.ps1 -Pr <number>` to publish the review on GitHub. The script:
+
+1. Reads `merged-findings.json` (Phase 6) and `diff-context.json` (Phase 2).
+2. Builds a single review payload (`POST /repos/.../pulls/.../reviews`):
+   - `event` = APPROVE for `ship`, REQUEST_CHANGES for `fix majors first` and `needs rework`, COMMENT otherwise.
+   - `body` is summary-only: counts, verdict, optional prior-review summary table. No per-finding text in the body.
+   - `comments[]` carries one entry per finding with `{path, side: "RIGHT", line, body}`. Multi-line ranges add `start_line` + `start_side`. ` ```suggestion ` blocks render as a clickable Apply button.
+3. Constrains every comment's `line` to fall inside an actual diff hunk for the file. Findings whose `line` is outside every hunk get clamped to the first hunk's start (and a `clamped_lines` count is reported). Findings on a file with no hunks at all get a file-level comment (no `line` field).
+4. Filters every comment body to ASCII before posting (`--`, `->`, `[x]`, `>=`). UTF-8 dashes and arrows mangle when piped through bash on Windows; ASCII-fold sidesteps that entirely.
+5. Writes the payload to a UTF8NoBOM tempfile and posts via `gh api --method POST --input <file> /repos/<owner>/<repo>/pulls/<n>/reviews`. Never pipes JSON through bash.
 
 If no findings remain after filtering, emit a single line: "No high-confidence findings. Static analysis: <summary>." Do not post empty PR comments.
 
