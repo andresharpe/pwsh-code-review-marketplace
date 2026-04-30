@@ -105,17 +105,17 @@ Findings emit as JSON between agents and the merger:
   "agent": "diff-bug",
   "severity": "major",
   "confidence": 85,
-  "file": "src/Modules/DotbotCore/Public/New-Worktree.ps1",
+  "file": "src/Modules/WidgetCore/Public/New-Widget.ps1",
   "line_start": 42,
   "line_end": 48,
   "rule": "PWSH-DIFF-002",
   "message": "Removed [ValidateNotNullOrEmpty()] from -Path parameter.",
-  "consequence": "Callers in server.ps1:120 and tests/New-Worktree.Tests.ps1:55 rely on the validation; without it, an empty path will reach Join-Path and produce a confusing PathTooLong error.",
+  "consequence": "Callers in server.ps1:120 and tests/New-Widget.Tests.ps1:55 rely on the validation; without it, an empty path will reach Join-Path and produce a confusing PathTooLong error.",
   "fix": "Restore the validation attribute on the -Path parameter.",
   "fix_snippet": "[Parameter(Mandatory)]\n[ValidateNotNullOrEmpty()]\n[string]$Path",
   "evidence": [
     "server.ps1:120",
-    "tests/New-Worktree.Tests.ps1:55"
+    "tests/New-Widget.Tests.ps1:55"
   ]
 }
 ```

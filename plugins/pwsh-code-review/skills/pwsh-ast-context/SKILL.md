@@ -26,11 +26,11 @@ Single JSON file at `.pwsh-review/cache/ast-index.json`. Keyed by file path, con
   "schema_version": "1",
   "generated": "<ISO timestamp>",
   "files": {
-    "src/Modules/DotbotCore/Public/New-Worktree.ps1": {
+    "src/Modules/WidgetCore/Public/New-Widget.ps1": {
       "hash": "<sha256>",
       "functions": [
         {
-          "name": "New-DotbotWorktree",
+          "name": "New-Widget",
           "line_start": 1,
           "line_end": 87,
           "parameters": [
@@ -42,7 +42,7 @@ Single JSON file at `.pwsh-review/cache/ast-index.json`. Keyed by file path, con
               "value_from_pipeline": false
             }
           ],
-          "output_type_declared": ["DotbotWorktree"],
+          "output_type_declared": ["Widget"],
           "has_process_block": false,
           "supports_should_process": true,
           "has_cbh": true,
@@ -52,22 +52,22 @@ Single JSON file at `.pwsh-review/cache/ast-index.json`. Keyed by file path, con
         }
       ],
       "imports": ["Module1"],
-      "uses_classes": ["DotbotWorktree"],
+      "uses_classes": ["Widget"],
       "is_test": false,
       "manifest": null
     }
   },
   "function_to_file": {
-    "New-DotbotWorktree": "src/Modules/DotbotCore/Public/New-Worktree.ps1"
+    "New-Widget": "src/Modules/WidgetCore/Public/New-Widget.ps1"
   },
   "callers_of": {
-    "New-DotbotWorktree": [
+    "New-Widget": [
       {"file": "server.ps1", "line": 120, "context": "function-body"},
-      {"file": "tests/New-Worktree.Tests.ps1", "line": 55, "context": "test"}
+      {"file": "tests/New-Widget.Tests.ps1", "line": 55, "context": "test"}
     ]
   },
   "tests_for": {
-    "New-DotbotWorktree": ["tests/New-Worktree.Tests.ps1"]
+    "New-Widget": ["tests/New-Widget.Tests.ps1"]
   }
 }
 ```
@@ -171,8 +171,8 @@ Result:
 
 ```json
 "tests_for": {
-  "New-DotbotWorktree": [
-    "tests/New-Worktree.Tests.ps1",
+  "New-Widget": [
+    "tests/New-Widget.Tests.ps1",
     "tests/integration/Worktree.Integration.Tests.ps1"
   ]
 }
@@ -208,12 +208,12 @@ $delta = Compare-FunctionAst $preAst $postAst
   "diff_base": "<sha>",
   "diff_head": "<sha>",
   "changed_files": [
-    "src/Modules/DotbotCore/Public/New-Worktree.ps1",
-    "tests/New-Worktree.Tests.ps1"
+    "src/Modules/WidgetCore/Public/New-Widget.ps1",
+    "tests/New-Widget.Tests.ps1"
   ],
   "changed_hunks": [
     {
-      "file": "src/Modules/DotbotCore/Public/New-Worktree.ps1",
+      "file": "src/Modules/WidgetCore/Public/New-Widget.ps1",
       "line_start": 42,
       "line_end": 48,
       "added": ["..."],
@@ -222,8 +222,8 @@ $delta = Compare-FunctionAst $preAst $postAst
   ],
   "changed_functions": [
     {
-      "name": "New-DotbotWorktree",
-      "file": "src/Modules/DotbotCore/Public/New-Worktree.ps1",
+      "name": "New-Widget",
+      "file": "src/Modules/WidgetCore/Public/New-Widget.ps1",
       "line_start": 1,
       "line_end": 87,
       "delta": {
@@ -240,10 +240,10 @@ $delta = Compare-FunctionAst $preAst $postAst
       },
       "callers": [
         {"file": "server.ps1", "line": 120, "context": "function-body", "snippet": "..."},
-        {"file": "tests/New-Worktree.Tests.ps1", "line": 55, "context": "test", "snippet": "..."}
+        {"file": "tests/New-Widget.Tests.ps1", "line": 55, "context": "test", "snippet": "..."}
       ],
       "callees": ["Test-Path", "Join-Path"],
-      "tests": ["tests/New-Worktree.Tests.ps1"]
+      "tests": ["tests/New-Widget.Tests.ps1"]
     }
   ],
   "static_findings_summary": {

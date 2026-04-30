@@ -168,7 +168,7 @@ If the project has its own conventions that contradict the template, preserve th
 <!-- TODO: confirm definition -->
 Domain term, appears in 47 places. Not auto-inferable from context.
 
-Used in: src/server.ps1:42, src/Modules/DotbotCore/Public/New-Worktree.ps1:1, ...
+Used in: src/server.ps1:42, src/Modules/WidgetCore/Public/New-Widget.ps1:1, ...
 ```
 
 ### `patterns/`

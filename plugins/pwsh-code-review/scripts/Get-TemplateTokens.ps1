@@ -281,7 +281,7 @@ function Test-RhsAlwaysNonEmpty {
     Cases that mark a token "always non-empty":
       1. The parameter has a non-empty string-literal default.
       2. The function body has an exhaustive `if/elseif/else` block where
-         every branch assigns $varName to a non-empty literal (the dotbot
+         every branch assigns $varName to a non-empty literal (the
          init-then-overwrite idiom).
       3. The variable is assigned via expression-form `$x = if (...) { ... }
          else { "literal" }` whose every branch yields a non-empty string.
