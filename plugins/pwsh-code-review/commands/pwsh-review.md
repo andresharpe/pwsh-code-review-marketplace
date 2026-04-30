@@ -71,6 +71,21 @@ See `skills/pwsh-ast-context/SKILL.md` for the schema and walking algorithm.
 
 If the AST index does not exist, this is a cold start; expect 5-30 seconds depending on repo size. Subsequent runs are near-instant for the unchanged portion.
 
+## Phase 2.5: prior automated reviews (only with `--pr`)
+
+When `--pr <number>` is supplied, run `scripts/Get-PriorReviews.ps1 -Pr <number>` to fetch existing review activity from automated bots (Copilot, CodeRabbit, Dependabot, etc.) so dispatched agents don't duplicate findings already raised. The script:
+
+1. Resolves the repo's owner/name via `gh repo view --json owner,name`.
+2. Fetches `reviewThreads(first:100)` and `reviews(first:50)` via `gh api graphql`.
+3. Filters to authors whose login ends in `[bot]` or matches a known-bot list.
+4. Writes `.pwsh-review/cache/prior-reviews.json` containing:
+   - `unresolved_threads[]` — unresolved bot line comments (path, line, body, bot, created_at)
+   - `resolved_threads_count` — how many bot threads have already been marked resolved
+   - `top_level_reviews[]` — bot review summaries with non-empty bodies
+   - `bots[]` — distinct bot logins encountered
+
+Skip this phase silently when not in `--pr` mode or when `gh` is unavailable. Failures to fetch produce an empty cache with a `note` field rather than aborting the review.
+
 ## Phase 3: load project profile
 
 Read these into context:
@@ -91,8 +106,14 @@ Launch the following agents **in parallel**. Each receives:
 - The full diff
 - `.pwsh-review/cache/diff-context.json`
 - `.pwsh-review/cache/static-findings.json`
+- `.pwsh-review/cache/prior-reviews.json` (when present — see Phase 2.5)
 - The project profile from Phase 3
 - The principles and severity rubric
+
+When `prior-reviews.json` is present, agents must:
+- **Not duplicate** findings that any entry in `unresolved_threads[]` already names. A finding is a duplicate when same file + within 5 lines + same root cause as a prior bot comment.
+- **Confirm or dispute** prior findings only when the agent has new, evidence-backed information (e.g. the diff fixed it; the bot is wrong because of context the bot can't see). Confirmations and disputes go in the agent's normal output stream, tagged with `prior_thread_ref` so the merger can render them under the right heading.
+- **Ignore resolved threads.** They've been actioned by the author already.
 
 Agents (always dispatched):
 

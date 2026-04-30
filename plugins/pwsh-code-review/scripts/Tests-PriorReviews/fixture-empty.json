@@ -1,0 +1,10 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": { "nodes": [] },
+        "reviews":       { "nodes": [] }
+      }
+    }
+  }
+}

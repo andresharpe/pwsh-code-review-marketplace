@@ -1,0 +1,90 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "nodes": [
+            {
+              "isResolved": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "path": "scripts/Foo.ps1",
+                    "line": 42,
+                    "body": "Consider using -LiteralPath here.",
+                    "createdAt": "2026-04-30T10:00:00Z",
+                    "author": { "login": "copilot-pull-request-reviewer[bot]" }
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "path": "scripts/Bar.ps1",
+                    "line": 10,
+                    "body": "Already addressed in 7b9ac02.",
+                    "createdAt": "2026-04-30T09:30:00Z",
+                    "author": { "login": "copilot-pull-request-reviewer[bot]" }
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "path": "scripts/Foo.ps1",
+                    "line": 88,
+                    "body": "Human reviewer comment — should be ignored.",
+                    "createdAt": "2026-04-30T10:05:00Z",
+                    "author": { "login": "andresharpe" }
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "path": "scripts/Baz.ps1",
+                    "line": 7,
+                    "body": "[CodeRabbit] suggestion: rename Test-Foo to Confirm-Foo for verb compliance.",
+                    "createdAt": "2026-04-30T10:10:00Z",
+                    "author": { "login": "coderabbitai" }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "reviews": {
+          "nodes": [
+            {
+              "state": "COMMENTED",
+              "body": "Overall LGTM with two suggestions inline.",
+              "createdAt": "2026-04-30T10:00:30Z",
+              "author": { "login": "copilot-pull-request-reviewer[bot]" }
+            },
+            {
+              "state": "APPROVED",
+              "body": "",
+              "createdAt": "2026-04-30T10:11:00Z",
+              "author": { "login": "github-actions[bot]" }
+            },
+            {
+              "state": "COMMENTED",
+              "body": "Looks fine to me.",
+              "createdAt": "2026-04-30T10:15:00Z",
+              "author": { "login": "andresharpe" }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
