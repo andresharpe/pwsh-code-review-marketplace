@@ -68,7 +68,7 @@ try {
     $static = if (Test-Path $staticPath) {
         Get-Content $staticPath -Raw | ConvertFrom-Json -AsHashtable
     } else {
-        @{ psscriptanalyzer = @(); compatibility = @(); injection_hunter = @(); gitleaks = @(); pester = $null; markdownlint = @(); test_brittleness = @(); template_substitution = @(); tools_missing = @() }
+        @{ psscriptanalyzer = @(); compatibility = @(); injection_hunter = @(); gitleaks = @(); pester = $null; markdownlint = @(); test_brittleness = @(); template_substitution = @(); test_coverage = @(); tools_missing = @() }
     }
 
     # Load calibrated agent findings
@@ -91,7 +91,7 @@ try {
     $staticAsFindings = @()
 
     # PSScriptAnalyzer & Compatibility & InjectionHunter & heuristic sources
-    $heuristicSources = @('test_brittleness', 'template_substitution')
+    $heuristicSources = @('test_brittleness', 'template_substitution', 'test_coverage')
     foreach ($cat in @('psscriptanalyzer', 'compatibility', 'injection_hunter') + $heuristicSources) {
         foreach ($f in @($static[$cat])) {
             if (-not $f) { continue }
@@ -258,6 +258,15 @@ try {
             [void]$sb.AppendLine("- Template substitution: $tplRaw finding(s)")
         } else {
             [void]$sb.AppendLine("- Template substitution: $tplRaw raw, $tplKept post-filter")
+        }
+    }
+    if ($static.ContainsKey('test_coverage')) {
+        $tcRaw  = @($static.test_coverage).Count
+        $tcKept = @($passedStaticHeuristic | Where-Object { $_.source -eq 'test_coverage' }).Count
+        if ($tcRaw -eq $tcKept) {
+            [void]$sb.AppendLine("- Test coverage: $tcRaw finding(s)")
+        } else {
+            [void]$sb.AppendLine("- Test coverage: $tcRaw raw, $tcKept post-filter")
         }
     }
     if ($static.pester -and $static.pester.ran) {
