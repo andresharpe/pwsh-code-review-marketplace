@@ -1,0 +1,56 @@
+name: pwsh-review (static-only)
+
+# Dogfood the plugin against this repo on every PR. Static-only -- agent
+# dispatch is not run in CI. Operators get the deeper agent review by
+# invoking /pwsh-review locally from Claude Code.
+#
+# The job fails when the verdict is `needs rework` (any blocker present)
+# and warns but passes on `fix majors first`. The full findings JSON is
+# uploaded as an artefact for post-hoc inspection.
+
+on:
+  pull_request:
+    paths:
+      - 'plugins/**'
+      - '.pwsh-review/**'
+      - 'Invoke-LocalReview.ps1'
+      - '.github/workflows/pwsh-review.yml'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  static-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install PowerShell modules
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          Install-Module PSScriptAnalyzer -Scope CurrentUser -Force -SkipPublisherCheck
+          Install-Module Pester           -Scope CurrentUser -Force -SkipPublisherCheck
+
+      - name: Run pwsh-review (static-only)
+        id: review
+        shell: pwsh
+        run: |
+          # Invoke-LocalReview.ps1 exits 0 on `ship` and `fix majors first`,
+          # 1 on `needs rework`. The job's success/failure mirrors that.
+          ./Invoke-LocalReview.ps1 -RepoRoot $PWD
+
+      - name: Upload static-findings.json
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pwsh-review-static-findings
+          path: |
+            .pwsh-review/cache/static-findings.json
+            .pwsh-review/cache/merged-findings.json
+            .pwsh-review/cache/review.md
+          if-no-files-found: warn

@@ -129,6 +129,7 @@ The previous two sections fit together as a closed loop:
 | 2026-04-30 | PR-C (#39) | `-ErrorAction SilentlyContinue` / `Ignore` without inline justification | conventions-agent |
 | 2026-04-30 | PR-D (#40) | Loose `-ge`/`-le`/`-gt`/`-lt` against `*Count` / `*Length` properties (PWSH-TEST-010) | Test-Brittleness.ps1 |
 | 2026-04-30 | PR-E (#41) | Marketplace `.pwsh-review/` profile bootstrap (architecture, standards, glossary, patterns, settings) | profile only |
+| 2026-04-30 | PR-F | Dogfood automation: pre-push hook + CI workflow + `Invoke-LocalReview.ps1` + CONTRIBUTING | workflow + hook |
 
 ---
 

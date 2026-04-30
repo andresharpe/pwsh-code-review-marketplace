@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# pwsh-review pre-push hook.
+#
+# Runs the local static-only review against the working tree. Refuses the
+# push when the verdict is `needs rework` (any blocker present) and warns
+# but allows on `fix majors first`. Skips the review entirely when the
+# branch has no commits ahead of origin -- nothing to review.
+#
+# Enable for this clone:
+#     git config core.hooksPath .githooks
+#
+# Bypass for a single push (e.g. emergency revert):
+#     git push --no-verify
+
+set -e
+
+# Resolve the repo root regardless of where the hook is invoked from.
+repo_root="$(git rev-parse --show-toplevel)"
+review_script="$repo_root/Invoke-LocalReview.ps1"
+
+if [ ! -f "$review_script" ]; then
+    echo "[pwsh-review] Invoke-LocalReview.ps1 not found at $review_script -- skipping hook." >&2
+    exit 0
+fi
+
+# Skip when there's nothing to review (e.g. pushing a tag, or the local
+# branch is already at parity with the remote tracking ref).
+local_sha="$(git rev-parse HEAD 2>/dev/null || true)"
+upstream_sha="$(git rev-parse '@{u}' 2>/dev/null || true)"
+if [ -n "$local_sha" ] && [ "$local_sha" = "$upstream_sha" ]; then
+    echo "[pwsh-review] no commits ahead of upstream -- skipping review."
+    exit 0
+fi
+
+if ! command -v pwsh >/dev/null 2>&1; then
+    echo "[pwsh-review] pwsh not on PATH -- skipping hook (install PowerShell 7+)." >&2
+    exit 0
+fi
+
+echo "[pwsh-review] running pre-push static review..."
+pwsh -NoProfile -File "$review_script" -RepoRoot "$repo_root"
+exit $?
