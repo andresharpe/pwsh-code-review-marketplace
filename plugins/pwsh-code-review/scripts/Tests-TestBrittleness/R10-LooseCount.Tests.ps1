@@ -24,6 +24,11 @@ Describe 'R10' {
         # POSITIVE: -gt against a compound *Count name.
         ($result.PrintedCount -gt 3) | Should -BeTrue
     }
+
+    It 'fewer than expected printed - pester pipe' {
+        # POSITIVE: -lt against a compound *Count name.
+        ($result.PrintedCount -lt 9) | Should -BeTrue
+    }
 }
 
 # NEGATIVE: value <= 1 is filtered out (trivial threshold).

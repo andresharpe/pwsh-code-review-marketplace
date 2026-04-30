@@ -782,51 +782,6 @@ function Test-PatternHasUnescapedDollarVariable {
     return $false
 }
 
-function Test-Rule010 {
-    # PWSH-TEST-010: loose comparison `-ge|-le|-gt|-lt <int>` against a
-    # Count/Length-shaped property name (e.g. `RestoredCount`, `MessageLength`)
-    # inside an assertion. Disjoint from PWSH-TEST-001 by name pattern: R001
-    # owns bare `.Count`; R010 owns the compound *Count / *Length names.
-    # Rationale: a count-shaped property usually has an exact expected value
-    # determined by the test setup; a loose comparison passes for a range of
-    # counts and hides off-by-one regressions.
-    param(
-        [Parameter(Mandatory)]$Node,
-        [Parameter(Mandatory)][string]$RelativePath
-    )
-    if ($Node -isnot [System.Management.Automation.Language.BinaryExpressionAst]) { return $null }
-    $op = $Node.Operator
-    $opSym = switch ($op) {
-        ([System.Management.Automation.Language.TokenKind]::Ige) { '-ge' }
-        ([System.Management.Automation.Language.TokenKind]::Ile) { '-le' }
-        ([System.Management.Automation.Language.TokenKind]::Igt) { '-gt' }
-        ([System.Management.Automation.Language.TokenKind]::Ilt) { '-lt' }
-        default { $null }
-    }
-    if (-not $opSym) { return $null }
-
-    $left = $Node.Left
-    if ($left -isnot [System.Management.Automation.Language.MemberExpressionAst]) { return $null }
-    $member = $left.Member
-    if ($member -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) { return $null }
-    $name = $member.Value
-    # Compound *Count / *Length names only — bare `Count` is owned by R001.
-    if ($name -notmatch '(?i)(Count|Length)$') { return $null }
-    if ($name -eq 'Count') { return $null }
-
-    $right = $Node.Right
-    if ($right -isnot [System.Management.Automation.Language.ConstantExpressionAst]) { return $null }
-    if ($right.Value -isnot [int]) { return $null }
-    if ($right.Value -le 1) { return $null }
-
-    if (-not (Test-IsInAssertion -Node $Node)) { return $null }
-
-    $msg = "Brittle assertion: ``$name $opSym $($right.Value)`` is satisfied across a range of counts. If the test setup determines the expected value, assert with -eq against the exact value (or against the fixture's .Count) so a missed item fails the test."
-    return (New-Finding -Rule 'PWSH-TEST-010' -File $RelativePath `
-        -Line $Node.Extent.StartLineNumber -Column $Node.Extent.StartColumnNumber `
-        -Message $msg)
-}
-
 function Test-Rule009 {
     # PWSH-TEST-009: regex literal in `-match` or `Should -Match` containing
     # an unescaped `$word` sequence inside an assertion. The author almost
@@ -867,6 +822,56 @@ function Test-Rule009 {
 
     $msg = 'Regex pattern contains an unescaped `$` followed by a word — the regex engine reads `$` as the end-of-line anchor, so the assertion will not match a literal PowerShell `$variable` token. Escape as `\$` and use a single-quoted PowerShell literal so `$` is not interpolated.'
     return (New-Finding -Rule 'PWSH-TEST-009' -File $RelativePath `
+        -Line $Node.Extent.StartLineNumber -Column $Node.Extent.StartColumnNumber `
+        -Message $msg)
+}
+
+function Test-Rule010 {
+    # PWSH-TEST-010: loose comparison `-ge|-le|-gt|-lt <int>` against a
+    # Count/Length-shaped property name (e.g. `RestoredCount`, `MessageLength`)
+    # inside an assertion. Disjoint from PWSH-TEST-001 by name pattern: R001
+    # owns bare `.Count`; R010 owns the compound *Count / *Length names and
+    # explicitly excludes the bare `.Length` case to avoid noise on
+    # `[string]` / `[array]` length probes that legitimately bound a range.
+    # Rationale: a count- or length-shaped property usually has an exact
+    # expected value determined by the test setup; a loose comparison passes
+    # for a range of values and hides off-by-one regressions.
+    param(
+        [Parameter(Mandatory)]$Node,
+        [Parameter(Mandatory)][string]$RelativePath
+    )
+    if ($Node -isnot [System.Management.Automation.Language.BinaryExpressionAst]) { return $null }
+    $op = $Node.Operator
+    $opSym = switch ($op) {
+        ([System.Management.Automation.Language.TokenKind]::Ige) { '-ge' }
+        ([System.Management.Automation.Language.TokenKind]::Ile) { '-le' }
+        ([System.Management.Automation.Language.TokenKind]::Igt) { '-gt' }
+        ([System.Management.Automation.Language.TokenKind]::Ilt) { '-lt' }
+        default { $null }
+    }
+    if (-not $opSym) { return $null }
+
+    $left = $Node.Left
+    if ($left -isnot [System.Management.Automation.Language.MemberExpressionAst]) { return $null }
+    $member = $left.Member
+    if ($member -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) { return $null }
+    $name = $member.Value
+    # Compound *Count / *Length names only -- bare `Count` and `Length` are
+    # excluded so this rule does not double-fire with R001 (which owns
+    # `Count`) and does not flag legitimate string/array length probes.
+    if ($name -notmatch '(?i)(Count|Length)$') { return $null }
+    if ($name -eq 'Count')  { return $null }
+    if ($name -eq 'Length') { return $null }
+
+    $right = $Node.Right
+    if ($right -isnot [System.Management.Automation.Language.ConstantExpressionAst]) { return $null }
+    if ($right.Value -isnot [int]) { return $null }
+    if ($right.Value -le 1) { return $null }
+
+    if (-not (Test-IsInAssertion -Node $Node)) { return $null }
+
+    $msg = "Brittle assertion: ``$name $opSym $($right.Value)`` is satisfied across a range of values. If the test setup determines the expected ``$name``, assert with -eq against the exact value (or against the fixture's underlying ``.Count`` / ``.Length``) so a missed or extra item fails the test."
+    return (New-Finding -Rule 'PWSH-TEST-010' -File $RelativePath `
         -Line $Node.Extent.StartLineNumber -Column $Node.Extent.StartColumnNumber `
         -Message $msg)
 }
