@@ -1,6 +1,6 @@
 {
   "name": "pwsh-code-review",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Multi-agent code review for PowerShell 7+ projects. Cross-platform aware, diff-focused, deterministic-first. Builds a project profile (architecture, standards, patterns, glossary) on bootstrap and uses it to deliver high-signal reviews with confidence and severity scoring.",
   "author": {
     "name": "DOTBOT"
