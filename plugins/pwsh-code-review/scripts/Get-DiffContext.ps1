@@ -44,6 +44,11 @@ Set-StrictMode -Version 3.0
 # Shape-extraction helpers shared with Get-AstIndex.ps1.
 . (Join-Path $PSScriptRoot '_ShapeHelpers.ps1')
 
+# Plugin version (emitted into the diff context for traceability).
+. (Join-Path $PSScriptRoot '_PluginVersion.ps1')
+$pluginRoot    = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$pluginVersion = Get-PluginVersion -PluginRoot $pluginRoot
+
 Push-Location $RepoRoot
 try {
     $cacheDir = Join-Path $RepoRoot '.pwsh-review/cache'
@@ -104,6 +109,7 @@ try {
     if (-not $diffText) {
         $emptyContext = [ordered]@{
             schema_version           = '1'
+            plugin_version           = $pluginVersion
             diff_base                = $diffBase
             diff_head                = $diffHead
             mode                     = $Mode
@@ -345,6 +351,7 @@ try {
 
     $context = [ordered]@{
         schema_version           = '1'
+        plugin_version           = $pluginVersion
         generated                = (Get-Date).ToUniversalTime().ToString('o')
         diff_base                = $diffBase
         diff_head                = $diffHead
