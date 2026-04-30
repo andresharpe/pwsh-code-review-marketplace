@@ -100,11 +100,18 @@ function ConvertTo-RelativePath {
     try {
         $resolved     = [IO.Path]::GetFullPath($Path)
         $rootResolved = [IO.Path]::GetFullPath($Root)
-        if ($resolved.StartsWith($rootResolved, [StringComparison]::OrdinalIgnoreCase)) {
-            $rel = $resolved.Substring($rootResolved.Length).TrimStart('\', '/')
-            return ($rel -replace '\\', '/')
+        # Use the framework helper instead of a `StartsWith` prefix check —
+        # `StartsWith` falsely matches sibling-named directories
+        # (e.g. `C:\repo` vs `C:\repo2\file.ps1`). GetRelativePath handles
+        # the directory-boundary check correctly.
+        $rel = [IO.Path]::GetRelativePath($rootResolved, $resolved)
+        # If the path is outside the root, GetRelativePath returns a `..`
+        # path. In that case, fall back to the (slash-normalized) absolute
+        # path so the finding still has a usable file reference.
+        if ($rel -eq '..' -or $rel.StartsWith('..' + [IO.Path]::DirectorySeparatorChar, [StringComparison]::Ordinal)) {
+            return ($Path -replace '\\', '/')
         }
-        return ($Path -replace '\\', '/')
+        return ($rel -replace '\\', '/')
     } catch {
         return ($Path -replace '\\', '/')
     }
