@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# pwsh-review pre-push hook.
+#
+# Runs the local static-only review against the working tree. Refuses the
+# push when the verdict is `needs rework` (any blocker present) and warns
+# but allows on `fix majors first`. Skips the review entirely when the
+# branch has no commits ahead of origin -- nothing to review.
+#
+# Enable for this clone:
+#     git config core.hooksPath .githooks
+#
+# Bypass for a single push (e.g. emergency revert):
+#     git push --no-verify
+
+set -e
+
+# Resolve the repo root regardless of where the hook is invoked from.
+repo_root="$(git rev-parse --show-toplevel)"
+review_script="$repo_root/Invoke-LocalReview.ps1"
+
+if [ ! -f "$review_script" ]; then
+    echo "[pwsh-review] Invoke-LocalReview.ps1 not found at $review_script -- skipping hook." >&2
+    exit 0
+fi
+
+# Skip when there's nothing to review. Git passes `<local_ref> <local_oid>
+# <remote_ref> <remote_oid>` for each ref being pushed on stdin. Skip
+# unless at least one branch ref's local oid differs from its remote oid;
+# this excludes tag-only pushes, deletes, and re-pushes of already-pushed
+# branches.
+zero_oid='0000000000000000000000000000000000000000'
+has_branch_commits_to_push=0
+while read -r local_ref local_oid remote_ref remote_oid; do
+    [ -n "$local_ref" ] || continue
+
+    # Ignore deletes (local_oid is all-zeros) and non-branch refs.
+    if [ "$local_oid" = "$zero_oid" ]; then
+        continue
+    fi
+    case "$local_ref" in
+        refs/heads/*)
+            if [ "$local_oid" != "$remote_oid" ]; then
+                has_branch_commits_to_push=1
+                break
+            fi
+            ;;
+    esac
+done
+
+if [ "$has_branch_commits_to_push" -eq 0 ]; then
+    echo "[pwsh-review] no branch commits being pushed -- skipping review."
+    exit 0
+fi
+
+if ! command -v pwsh >/dev/null 2>&1; then
+    echo "[pwsh-review] pwsh not on PATH -- skipping hook (install PowerShell 7.4+)." >&2
+    exit 0
+fi
+
+echo "[pwsh-review] running pre-push static review..."
+pwsh -NoProfile -File "$review_script" -RepoRoot "$repo_root"
+exit $?
