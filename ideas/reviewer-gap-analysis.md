@@ -1,5 +1,15 @@
 # Prompt: pwsh-code-review reviewer gap analysis
 
+## Loop status
+
+`loop status: round 1 in flight (PRs A-F draining the initial 12-entry queue) -- observe before queueing round 2`
+
+## Recently observed gaps
+
+Format: `[YYYY-MM-DD] PR #N -- <one-sentence gap> -- <agent or scanner that should have caught it>`
+
+(empty -- populated by external reviewers between rounds)
+
 ## Why this exists
 
 We ran `pwsh-code-review v0.19.0` end-to-end against three real PowerShell PRs in `andresharpe/dotbot` (#385, #386, #387) and against three of our own PRs in this repo (#33, #34, #35) where Copilot also reviewed independently. Several Copilot comments named issues that the plugin's own reviewer agents would have missed. This file captures those known gaps and asks for a deeper sweep so the next batch of agent / scanner improvements lands as a coherent set.
@@ -105,10 +115,14 @@ The previous two sections fit together as a closed loop:
 >
 > 11. Make this file self-aware. Each PR opened to close a gap should also remove the corresponding line(s) from "Recently observed gaps" and append to a "Closed gaps" log at the bottom. The loop's halting state lives in the file alongside the queue.
 
----
+## Closed gaps
 
-_Created during the v0.19.0 e2e shakedown against `andresharpe/dotbot` and the three resulting marketplace PRs (#33 merged, #34 and #35 in flight at time of writing)._
-
+| Date | PR | Gap | Owner |
+|------|----|----|-------|
+| 2026-04-30 | PR-A | Here-string escape discipline (`\$x` vs backtick-`$x`) | pwsh-idioms-agent |
+| 2026-04-30 | PR-A | `$Matches` clobber on nested regex | pwsh-idioms-agent |
+| 2026-04-30 | PR-A | `ConvertFrom-Json -AsHashtable` single-element unwrap under StrictMode 3.0 | pwsh-idioms-agent |
+| 2026-04-30 | PR-A | `Write-Host` replacement guidance (Information / Verbose / Warning / Error) | pwsh-idioms-agent |
 
 ---
 

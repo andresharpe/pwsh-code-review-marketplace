@@ -89,6 +89,14 @@ This is the area where this plugin earns its keep. Be aggressive here.
 - Writing scripts that other tools consume: flag if `-Encoding utf8NoBOM` is missing (`minor`, conf 75).
 - `[System.IO.File]::WriteAllText` without explicit encoding parameter: flag (`minor`, conf 80).
 
+### Here-string escape discipline
+
+Inside double-quoted here-strings (`@"..."@`), `$variable` interpolates, and `\$variable` does **not** suppress interpolation: the backslash is literal and `$variable` still expands. Backslash is not an escape character in PowerShell -- backtick is. Templated configuration files written via here-strings are the canonical place this trap lands.
+
+- New `\$` inside `@"..."@`: flag (`major`, conf 90). The author likely intended a literal `$variable` in the output, but in PowerShell this yields a leading backslash plus the expanded value of `$variable` -- and throws under `Set-StrictMode -Version 3.0` if `$variable` is not defined in scope. Two correct fixes: (a) use a single-quoted here-string `@'...'@` and concatenate interpolated bits if needed, or (b) escape with backtick: `` `$variable ``.
+- Single-quoted here-string (`@'...'@`) containing what looks like a backtick escape (`` `$x ``): flag (`minor`, conf 75). Inside `@'...'@` everything is literal -- the backtick will land in the output as a stray character. Either drop the backtick or switch to `@"..."@`.
+- Double-quoted here-string interpolating a sub-expression that is itself sensitive to `Set-StrictMode` (e.g. `$($obj.MaybeMissing)`): flag (`minor`, conf 70). Wrap the expression in a presence guard or move it out of the string.
+
 ### Native command invocation
 
 - New `&` invocation passing concatenated string arguments: flag (`major`, conf 85). Recommend array form: `& $exe $arg1 $arg2`.
@@ -96,6 +104,13 @@ This is the area where this plugin earns its keep. Be aggressive here.
 - Native command output piped to a cmdlet expecting objects: flag (`minor`, conf 75) if the conversion is implicit and lossy.
 - `cmd /c` or `bash -c` invocations: flag (`major`, conf 85), recommend the project's `Invoke-Native` wrapper if `patterns/` defines one.
 - Argument passing across pwsh versions where `$PSNativeCommandArgumentPassing` matters: flag if the project's target version is mixed and the args contain spaces or special chars.
+
+### Regex idioms
+
+- `$Matches` clobber on nested regex: flag (`major`, conf 85). When code captures `$Matches` from one regex match and runs another `-match`, `-replace`, or `-split` before reading the captured groups, the second operation overwrites `$Matches`. Symptom: a function reads `$Matches[1]` and gets the wrong group, or `$null`, or throws under `Set-StrictMode -Version 3.0`. Two fixes: (a) snapshot immediately -- `$first = $Matches.Clone()` -- before any further regex; (b) use `[regex]::Match($input, $pattern)` which returns a `Match` object instead of mutating `$Matches`.
+- Regex with `$x` interpolated into a single-quoted pattern: flag (`major`, conf 90). Single quotes do not interpolate. The pattern contains the literal `$x` as a regex anchor + character. Use a double-quoted string or build the pattern with `[regex]::Escape($value)`.
+- `-match` against multiline pwsh source assertions where `$` is treated as the EOL anchor: see `PWSH-TEST-009` (static layer owns it for test files). For non-test code, flag the same pattern as a `minor`, conf 75.
+- Over-broad character class such as `[@-~]` (matches `]` and `^`) when the author intended a printable-ASCII set: flag (`minor`, conf 80). Recommend explicit enumeration or `[\x20-\x7E]` and call out the exact characters that slipped in.
 
 ### Collections and performance
 
@@ -117,6 +132,8 @@ This is the area where this plugin earns its keep. Be aggressive here.
   - Reading a non-existent property without `?.`
   - Using an uninitialised variable
   - Indexing past the end of an array
+- `ConvertFrom-Json -AsHashtable` consumed without an array wrapper: flag (`major`, conf 85). When the JSON is a single-element array, `-AsHashtable` returns the inner hashtable, not an `[object[]]` of length 1. Code that does `foreach ($x in (Get-Content ... | ConvertFrom-Json -AsHashtable))` then enumerates the hashtable's keys instead of iterating once over the element. Wrap with `@(...)` at the consumption boundary: `foreach ($x in @(Get-Content ... | ConvertFrom-Json -AsHashtable)) { ... }`.
+- New property access `$obj.Foo` where `$obj` flows from `ConvertFrom-Json`, `Import-PowerShellDataFile`, or any source whose shape is not statically guaranteed: flag (`major`, conf 75) when there is no presence guard (`$obj.PSObject.Properties['Foo']`, `$obj.ContainsKey('Foo')`, or `if ($obj -and $obj.Foo)` where the outer `-and` short-circuits before deref). Under StrictMode 3.0 the bare deref throws on missing keys.
 
 ### Type conversion
 
@@ -126,7 +143,18 @@ This is the area where this plugin earns its keep. Be aggressive here.
 
 ### Template substitution
 
-The static layer flags `{{TOKEN}}` misuse in markdown under `PWSH-TPL-001` (unknown token, no `-replace` rule) and `PWSH-TPL-002` (dead "if `{{X}}` is empty" prose where `X` is provably always non-empty). Do not re-flag these — the static layer owns them. You may upgrade a `PWSH-TPL-002` finding from `minor` to `major` only when you can read the corresponding `-replace` source and confirm the dead-conditional reasoning. Otherwise leave it alone.
+The static layer flags `{{TOKEN}}` misuse in markdown under `PWSH-TPL-001` (unknown token, no `-replace` rule) and `PWSH-TPL-002` (dead "if `{{X}}` is empty" prose where `X` is provably always non-empty). Do not re-flag these -- the static layer owns them. You may upgrade a `PWSH-TPL-002` finding from `minor` to `major` only when you can read the corresponding `-replace` source and confirm the dead-conditional reasoning. Otherwise leave it alone.
+
+### Output stream choice
+
+When `PSScriptAnalyzer` raises `PSAvoidUsingWriteHost`, do not stop at "switch off `Write-Host`". Recommend the right replacement for the *intent* of the call:
+
+- **Status / progress that the operator may want to see** -> `Write-Information "msg" -InformationAction Continue`. Callers can suppress with `-InformationAction SilentlyContinue` or redirect with `6>&1`.
+- **Debug-only diagnostics** -> `Write-Verbose`. Callers opt in with `-Verbose`.
+- **Recoverable problems** -> `Write-Warning`. Surfaced by default and routed through the warning stream.
+- **Errors that should stop or be caught** -> `Write-Error -ErrorAction Stop` or `throw`.
+
+Bare `Write-Host` is correct only for terminal-only UI text where the operator is the user (CLI banners, progress spinners, theme helpers in a `Show-*` cmdlet). When the project ships a theme module that wraps these, point at it -- the conventions agent will know the canonical helper from `standards.md`.
 
 ## Output
 
