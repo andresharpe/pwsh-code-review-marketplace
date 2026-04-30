@@ -49,6 +49,12 @@ Set-StrictMode -Version 3.0
 $pluginRoot    = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $pluginVersion = Get-PluginVersion -PluginRoot $pluginRoot
 
+# Resolve RepoRoot to an absolute path BEFORE Push-Location. After we change
+# directory, a relative -RepoRoot would re-resolve against the new cwd
+# (which is the repo itself), turning `repo` into `<absolute-repo>/repo` and
+# pointing every Join-Path / external call at the wrong location.
+$RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
+
 Push-Location $RepoRoot
 try {
     $cacheDir = Join-Path $RepoRoot '.pwsh-review/cache'
@@ -72,23 +78,8 @@ try {
         }
     }
 
-    # Refresh the AST index incrementally before reading the cache. Get-AstIndex
-    # is content-addressed by SHA256 (only re-parses files whose hash changed,
-    # prunes deleted files), and on a warm cache this is sub-second. On a cold
-    # repo (no cache yet) it builds from scratch — the same code path that used
-    # to require running Get-AstIndex.ps1 by hand.
+    $indexPath      = Join-Path $cacheDir 'ast-index.json'
     $astIndexScript = Join-Path $PSScriptRoot 'Get-AstIndex.ps1'
-    if (Test-Path $astIndexScript) {
-        # Suppress the script's return object to keep our own pipeline output
-        # clean; verbose still flows through to the caller.
-        & $astIndexScript -RepoRoot $RepoRoot | Out-Null
-    }
-
-    $indexPath = Join-Path $cacheDir 'ast-index.json'
-    if (-not (Test-Path $indexPath)) {
-        throw "AST index not found at $indexPath after refresh. Run Get-AstIndex.ps1 manually to diagnose."
-    }
-    $index = Get-Content $indexPath -Raw | ConvertFrom-Json -AsHashtable
 
     # Resolve base and head
     $diffArgs = switch ($Mode) {
@@ -163,6 +154,24 @@ try {
             }
         }
     }
+
+    # Refresh the AST index incrementally — but only when there's something
+    # for the index to describe (a PowerShell file in the diff) or the cache
+    # doesn't exist yet. On md-only / .yml-only diffs the index walk would
+    # just hash and prune without producing useful output, so skip it.
+    # Get-AstIndex is content-addressed by SHA256 (re-parses only files whose
+    # hash changed, prunes deleted files), so a warm refresh is sub-second.
+    $needsRefresh = ($changedFiles.Count -gt 0) -or -not (Test-Path $indexPath)
+    if ($needsRefresh -and (Test-Path $astIndexScript)) {
+        # Suppress the script's return object to keep our own pipeline output
+        # clean; verbose still flows through to the caller.
+        & $astIndexScript -RepoRoot $RepoRoot | Out-Null
+    }
+
+    if (-not (Test-Path $indexPath)) {
+        throw "AST index not found at $indexPath after refresh. Run Get-AstIndex.ps1 manually to diagnose."
+    }
+    $index = Get-Content $indexPath -Raw | ConvertFrom-Json -AsHashtable
 
     # For each changed pwsh file, identify changed functions
     $changedFunctions = @()
