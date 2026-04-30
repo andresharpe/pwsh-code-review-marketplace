@@ -72,9 +72,21 @@ try {
         }
     }
 
+    # Refresh the AST index incrementally before reading the cache. Get-AstIndex
+    # is content-addressed by SHA256 (only re-parses files whose hash changed,
+    # prunes deleted files), and on a warm cache this is sub-second. On a cold
+    # repo (no cache yet) it builds from scratch — the same code path that used
+    # to require running Get-AstIndex.ps1 by hand.
+    $astIndexScript = Join-Path $PSScriptRoot 'Get-AstIndex.ps1'
+    if (Test-Path $astIndexScript) {
+        # Suppress the script's return object to keep our own pipeline output
+        # clean; verbose still flows through to the caller.
+        & $astIndexScript -RepoRoot $RepoRoot | Out-Null
+    }
+
     $indexPath = Join-Path $cacheDir 'ast-index.json'
     if (-not (Test-Path $indexPath)) {
-        throw "AST index not found at $indexPath. Run Get-AstIndex.ps1 first."
+        throw "AST index not found at $indexPath after refresh. Run Get-AstIndex.ps1 manually to diagnose."
     }
     $index = Get-Content $indexPath -Raw | ConvertFrom-Json -AsHashtable
 
