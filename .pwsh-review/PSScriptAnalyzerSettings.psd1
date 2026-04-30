@@ -74,6 +74,15 @@
 
         # Compatibility: target pwsh 7.4 across Windows + Linux. macOS is
         # expected to work but is not gated in CI.
+        #
+        # ID format note: `PSUseCompatibleCmdlets.compatibility` uses the
+        # short form (`core-7.4-windows`, `core-7.4-linux`). The newer
+        # `PSUseCompatibleCommands` / `PSUseCompatibleTypes` rules use full
+        # profile filenames as shipped in PSScriptAnalyzer's compatibility
+        # data -- the `-framework` suffix on the Windows entry is part of
+        # the bundled profile name, not a separate target. Both forms refer
+        # to the same Windows + Linux on Core 7.4 surface; the IDs differ
+        # only because the rules consume different formats.
         PSUseCompatibleSyntax = @{
             Enable         = $true
             TargetVersions = @('7.4')

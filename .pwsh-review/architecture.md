@@ -101,7 +101,7 @@ Optional, silently degraded if absent: `gitleaks`, `markdownlint`, `actionlint`,
 
 - No build step -- files are consumed in place by the Claude Code plugin runtime.
 - Self-tests: `pwsh -File plugins/pwsh-code-review/scripts/Tests-<Name>/Run.ps1`. Each fixture dir is independent. There is no aggregate runner today.
-- CI: `.github/workflows/version-bump.yml` (auto-bump) plus `.github/workflows/pwsh-review.yml` (static-only review on every PR).
+- CI: `.github/workflows/version-bump.yml` (auto-bump) is in place today. `.github/workflows/pwsh-review.yml` (static-only review on every PR) is planned for PR-F and is not present yet.
 - Release: every push to `main` is auto-tagged `v(N+1).0.0` minor by the bump workflow. PRs do not bump versions.
 
 ## Conventions specific to this project

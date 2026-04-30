@@ -45,7 +45,7 @@ This repo has no public-module surface; most scripts are top-level entry points 
 This project targets Windows + Linux (CI runs both). The following are blockers:
 
 - Hard-coded `\` in path strings. Use `Join-Path` or `[IO.Path]::Combine`.
-- Hard-coded `/` in path strings, except for URLs.
+- Hard-coded `/` in path strings passed to filesystem APIs (`Test-Path`, `Get-Content`, `New-Item`, `Resolve-Path`, etc.). Glob patterns (`**/*.md`), repo-relative paths used for display or relative-path normalization, URLs, and JSON/markdown link targets are explicitly allowed.
 - Use of `$env:USERPROFILE`, `$env:APPDATA`, `$env:LOCALAPPDATA` without an `$IsWindows` guard. Prefer `$HOME`.
 - Use of `Get-CimInstance`, `Get-WmiObject`, registry cmdlets without an `if ($IsWindows)` guard.
 - Invocation of `powershell.exe` instead of `pwsh`.
