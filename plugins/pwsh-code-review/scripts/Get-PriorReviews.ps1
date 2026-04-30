@@ -75,29 +75,9 @@ Set-StrictMode -Version 3.0
 $pluginRoot    = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $pluginVersion = Get-PluginVersion -PluginRoot $pluginRoot
 
-# Bot logins ending in `[bot]` are the canonical GitHub signal. The known-list
-# catches edge cases (some bots run as regular accounts — e.g. SonarCloud
-# previously, CodeRabbit historically). Match lower-case.
-$script:KnownBotLogins = @(
-    'coderabbitai'
-    'sonarcloud'
-    'sonarqubecloud'
-    'snyk-bot'
-    'sentry-io'
-    'deepsource-io'
-    'codeclimate'
-)
-
-function Test-IsBotAuthor {
-    [CmdletBinding()]
-    [OutputType([bool])]
-    param([string]$Login)
-    if (-not $Login) { return $false }
-    if ($Login -like '*[[]bot[]]') { return $true }
-    $lower = $Login.ToLowerInvariant()
-    if ($lower -in $script:KnownBotLogins) { return $true }
-    return $false
-}
+# Bot detection is shared with the self-test under Tests-PriorReviews/ so the
+# test exercises the production logic, not a re-implementation.
+. (Join-Path $PSScriptRoot '_PriorReviewHelpers.ps1')
 
 function ConvertFrom-PriorReviewsResponse {
     <#
@@ -113,7 +93,7 @@ function ConvertFrom-PriorReviewsResponse {
     )
 
     $unresolved = [System.Collections.Generic.List[object]]::new()
-    $resolvedCount = 0
+    $resolvedThreadsCount = 0
     $topLevel  = [System.Collections.Generic.List[object]]::new()
     $botsSeen  = [System.Collections.Generic.HashSet[string]]::new()
 
@@ -144,30 +124,42 @@ function ConvertFrom-PriorReviewsResponse {
         bots                   = @()
     } }
 
+    # Walk every thread; bucket as bot-relevant if ANY comment in the thread
+    # is bot-authored. Counts are per-thread (not per-comment): a resolved
+    # thread with three bot replies contributes 1 to resolved_threads_count,
+    # an unresolved thread with three bot replies contributes 1 entry in
+    # unresolved_threads (using the FIRST bot comment for path/line/body —
+    # that's the canonical "what was flagged"). All bot logins encountered
+    # in the thread are added to `bots`.
     $threadNodes = @(Get-Path $pr @('reviewThreads', 'nodes'))
     foreach ($t in $threadNodes) {
         if (-not $t) { continue }
         $isResolved = [bool](Get-Path $t @('isResolved'))
         $commentNodes = @(Get-Path $t @('comments', 'nodes'))
+
+        $firstBotComment = $null
         foreach ($c in $commentNodes) {
             if (-not $c) { continue }
             $login = Get-Path $c @('author', 'login')
             if (-not (Test-IsBotAuthor -Login $login)) { continue }
             [void]$botsSeen.Add($login)
-
-            if ($isResolved) {
-                $resolvedCount++
-                continue
-            }
-
-            [void]$unresolved.Add([ordered]@{
-                bot        = $login
-                path       = Get-Path $c @('path')
-                line       = Get-Path $c @('line')
-                body       = Get-Path $c @('body')
-                created_at = Get-Path $c @('createdAt')
-            })
+            if ($null -eq $firstBotComment) { $firstBotComment = $c }
         }
+
+        if ($null -eq $firstBotComment) { continue }   # no bot in this thread
+
+        if ($isResolved) {
+            $resolvedThreadsCount++
+            continue
+        }
+
+        [void]$unresolved.Add([ordered]@{
+            bot        = Get-Path $firstBotComment @('author', 'login')
+            path       = Get-Path $firstBotComment @('path')
+            line       = Get-Path $firstBotComment @('line')
+            body       = Get-Path $firstBotComment @('body')
+            created_at = Get-Path $firstBotComment @('createdAt')
+        })
     }
 
     $reviewNodes = @(Get-Path $pr @('reviews', 'nodes'))
@@ -189,7 +181,7 @@ function ConvertFrom-PriorReviewsResponse {
 
     return @{
         unresolved_threads     = @($unresolved)
-        resolved_threads_count = $resolvedCount
+        resolved_threads_count = $resolvedThreadsCount
         top_level_reviews      = @($topLevel)
         bots                   = @($botsSeen | Sort-Object)
     }
@@ -256,7 +248,7 @@ query($owner:String!, $name:String!, $number:Int!) {
       reviewThreads(first: 100) {
         nodes {
           isResolved
-          comments(first: 1) {
+          comments(first: 100) {
             nodes {
               path
               line
@@ -316,18 +308,23 @@ query($owner:String!, $name:String!, $number:Int!) {
 
 $parsed = ConvertFrom-PriorReviewsResponse -Response $response
 
+# Replay mode has no real PR number ([int]$Pr defaults to 0, which would
+# read like a real PR in the cache). Only emit the field in Live mode.
 $out = [ordered]@{
     schema_version         = '1'
     plugin_version         = $pluginVersion
     fetched                = (Get-Date).ToUniversalTime().ToString('o')
-    pr                     = $Pr
-    owner                  = $Owner
-    repo                   = $Repo
-    bots                   = $parsed.bots
-    unresolved_threads     = $parsed.unresolved_threads
-    resolved_threads_count = $parsed.resolved_threads_count
-    top_level_reviews      = $parsed.top_level_reviews
 }
+if ($PSCmdlet.ParameterSetName -eq 'Live') {
+    $out['pr'] = $Pr
+}
+$out['owner']                  = $Owner
+$out['repo']                   = $Repo
+$out['bots']                   = $parsed.bots
+$out['unresolved_threads']     = $parsed.unresolved_threads
+$out['resolved_threads_count'] = $parsed.resolved_threads_count
+$out['top_level_reviews']      = $parsed.top_level_reviews
+
 $out | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $OutputPath -Encoding utf8NoBOM
 
 [pscustomobject]@{

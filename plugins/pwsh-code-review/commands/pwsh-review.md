@@ -84,7 +84,7 @@ When `--pr <number>` is supplied, run `scripts/Get-PriorReviews.ps1 -Pr <number>
    - `top_level_reviews[]` — bot review summaries with non-empty bodies
    - `bots[]` — distinct bot logins encountered
 
-Skip this phase silently when not in `--pr` mode or when `gh` is unavailable. Failures to fetch produce an empty cache with a `note` field rather than aborting the review.
+Skip this phase entirely when not in `--pr` mode. When `gh` is unavailable or the GraphQL fetch fails, the script emits a warning and writes an empty cache with a `note` field (it does not abort the review).
 
 ## Phase 3: load project profile
 
