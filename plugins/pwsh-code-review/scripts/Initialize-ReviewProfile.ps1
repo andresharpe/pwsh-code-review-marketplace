@@ -223,13 +223,13 @@ try {
     # basename has two valid relative paths). Default empty.
     MarkdownAllowedReferenceForms = @()
     # Per-rule severity override for static-pass findings. Maps the static
-    # rule's `rule_name` to the severity it should be classified as.
-    # Defaults below downgrade two InjectionHunter rules that fire on safe
-    # patterns the project catalog already lists (allowlist dispatch via
-    # `\$hash.\$key` where the key is from a literal `[ordered]@{}`,
-    # whitelist sanitisation with literal regexes). Add or remove entries
-    # as the project's own pattern catalog evolves; remove the override
-    # to restore the rule's default severity.
+    # rule's rule_name to the severity it should be classified as. Defaults
+    # below downgrade two InjectionHunter rules that fire on patterns the
+    # project catalog already lists as safe (allowlist dispatch via
+    # member-access where the key comes from a literal hashtable defined in
+    # the same function; whitelist sanitisation with literal regexes). Add
+    # or remove entries as the project's own pattern catalog evolves;
+    # remove the override to restore the rule's default severity.
     RuleSeverityOverrides         = @{
         'InjectionRisk.UnsafeEscaping'         = 'minor'
         'InjectionRisk.StaticPropertyInjection' = 'minor'

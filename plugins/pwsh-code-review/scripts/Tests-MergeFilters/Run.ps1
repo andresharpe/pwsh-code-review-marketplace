@@ -19,11 +19,14 @@
          Targets InjectionHunter false positives without disabling the
          rule class globally.
 
-    Three scenarios:
+    Four scenarios:
       - In-hunk vs out-of-hunk vs file-level (no line) findings.
       - Override downgrades InjectionHunter blocker -> minor.
       - No diff-context.json present (e.g. -All bootstrap mode): filter
         is disabled and findings carry through.
+      - Override value typo ('minro') is rejected with a Write-Warning;
+        the finding keeps its default severity rather than getting a
+        bogus severity that fails to count toward the verdict.
 
     Exits 0 on success, non-zero on any mismatch.
 #>
@@ -164,6 +167,42 @@ try {
         "got StaticFindings=$($out.StaticFindings)"
     Assert-True 'Scenario 3: nothing dropped by hunk filter' `
         ($out.StaticDroppedByHunkFilter -eq 0)
+} finally {
+    Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# --- Scenario 4: invalid override value -----------------------------------
+# A typo in RuleSeverityOverrides ('minro' instead of 'minor') must be
+# rejected with a Write-Warning. The finding keeps its default severity
+# (blocker for InjectionHunter) rather than getting an unrecognised value
+# that the counts hashtable cannot increment, which would make the verdict
+# silently wrong.
+$root = New-Skeleton `
+    -InjectionFindings @(
+        @{ rule_name='InjectionRisk.UnsafeEscaping'; file='core/foo.ps1'; line=10; severity='Warning'; message='-replace chain' }
+    ) `
+    -Hunks @(
+        @{ file='core/foo.ps1'; line_start=5; line_end=15 }
+    ) `
+    -RuleSeverityOverrides @{
+        'InjectionRisk.UnsafeEscaping' = 'minro'   # deliberate typo
+    }
+try {
+    # Capture warnings via 3>&1 so we can assert the user actually sees the
+    # rejection rather than a silent miscount. Wrap with @() so a single
+    # warning doesn't unwrap to a non-array under StrictMode 3.0.
+    $warnings = @(& $mergePath -RepoRoot $root 3>&1 |
+        Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+    $out = & $mergePath -RepoRoot $root  # second run, just for the counts object
+    $matchedWarnings = @($warnings | Where-Object { $_.Message -match 'not a recognised severity' })
+    Assert-True 'Scenario 4: invalid override emits Write-Warning' `
+        ($matchedWarnings.Count -ge 1) `
+        "got warnings=$($warnings.Count)"
+    Assert-True 'Scenario 4: invalid override falls back to default severity (blocker)' `
+        ($out.Counts['blocker'] -eq 1) `
+        "got blocker=$($out.Counts['blocker'])"
+    Assert-True 'Scenario 4: no finding sneaked into counts under the typoed severity' `
+        (-not $out.Counts.ContainsKey('minro'))
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
 }

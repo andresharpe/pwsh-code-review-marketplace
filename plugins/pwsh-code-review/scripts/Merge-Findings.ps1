@@ -76,9 +76,23 @@ try {
     #       'InjectionRisk.UnsafeEscaping'        = 'minor'
     #       'InjectionRisk.StaticPropertyInjection' = 'minor'
     #   }
+    # Validate override values against the known severity vocabulary so a
+    # typo (e.g. 'minro' instead of 'minor') produces a visible warning
+    # rather than silently dropping the finding from the verdict's count.
+    # Invalid entries are skipped; valid ones survive.
+    $validSeverities = @('blocker', 'major', 'minor', 'nit', 'question', 'praise')
     $ruleSeverityOverrides = @{}
     if ($config.ContainsKey('RuleSeverityOverrides') -and $config.RuleSeverityOverrides -is [hashtable]) {
-        $ruleSeverityOverrides = $config.RuleSeverityOverrides
+        foreach ($entry in $config.RuleSeverityOverrides.GetEnumerator()) {
+            $ruleName = [string]$entry.Key
+            $sev      = [string]$entry.Value
+            if ($sev -in $validSeverities) {
+                $ruleSeverityOverrides[$ruleName] = $sev
+            } else {
+                $valid = $validSeverities -join ', '
+                Write-Warning "RuleSeverityOverrides['$ruleName']='$sev' is not a recognised severity. Expected one of: $valid. Skipping override; rule will keep its default severity."
+            }
+        }
     }
 
     # Hunk-scope filter for static-pass findings. The static layer (PSSA,
