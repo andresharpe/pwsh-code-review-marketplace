@@ -84,7 +84,9 @@ PowerShell's path-accepting cmdlets default to `-Path`, which expands `*`, `?`, 
 
 The cmdlets at risk:
 
-`Test-Path`, `Get-Content`, `Get-Item`, `Get-ChildItem`, `Set-Content`, `Add-Content`, `Out-File`, `Remove-Item`, `Move-Item`, `Copy-Item`, `Rename-Item`, `New-Item` (when checking existence), `Resolve-Path`, `Convert-Path`, `Join-Path` (in some path-existence checks), `Import-Csv`, `Export-Csv`, `Import-Clixml`, `Export-Clixml`.
+`Test-Path`, `Get-Content`, `Get-Item`, `Get-ChildItem`, `Set-Content`, `Add-Content`, `Out-File`, `Remove-Item`, `Move-Item`, `Copy-Item`, `Rename-Item`, `New-Item` (when checking existence), `Resolve-Path`, `Convert-Path`, `Import-Csv`, `Export-Csv`, `Import-Clixml`, `Export-Clixml`.
+
+`Join-Path` is **not** at risk — it does string concatenation only, does not resolve or expand paths, and does not accept `-LiteralPath`. The risk lives at the consuming cmdlet that receives the joined string.
 
 Rules:
 
