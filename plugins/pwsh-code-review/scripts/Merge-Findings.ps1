@@ -71,12 +71,27 @@ try {
         @{ psscriptanalyzer = @(); compatibility = @(); injection_hunter = @(); gitleaks = @(); pester = $null; markdownlint = @(); test_brittleness = @(); template_substitution = @(); test_coverage = @(); eslint = @(); tools_missing = @(); tools_errors = @() }
     }
 
-    # Load calibrated agent findings
+    # Load calibrated agent findings.
+    # ConvertFrom-Json unwraps a single-element JSON array into the element
+    # itself. With `-AsHashtable`, a one-finding JSON file `[{...}]` parses
+    # to a single hashtable rather than a one-element array, so `-is [array]`
+    # is false and the original `elseif ($raw.findings)` then accessed
+    # `.findings` on a hashtable that didn't have that key — which throws
+    # under StrictMode 3.0 and broke the merger for any one-finding input.
+    # Probe the shape explicitly: array | {findings: [...]} | bare finding.
     $agentFindings = @()
     if ($AgentFindingsPath -and (Test-Path $AgentFindingsPath)) {
         $raw = Get-Content $AgentFindingsPath -Raw | ConvertFrom-Json -AsHashtable
-        if ($raw -is [array]) { $agentFindings = $raw }
-        elseif ($raw.findings) { $agentFindings = $raw.findings }
+        if ($raw -is [array]) {
+            $agentFindings = $raw
+        } elseif ($raw -is [System.Collections.IDictionary] -and $raw.Contains('findings')) {
+            $agentFindings = @($raw['findings'])
+        } elseif ($raw -is [System.Collections.IDictionary] -and $raw.Contains('severity')) {
+            # Bare finding object (no array wrapper, no findings key, but has
+            # the schema's `severity` field). Treat as a one-element list so
+            # the simplest agent output shape works.
+            $agentFindings = @($raw)
+        }
     }
 
     # ---- Map static findings to our schema ----

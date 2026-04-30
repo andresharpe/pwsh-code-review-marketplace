@@ -358,15 +358,26 @@ try {
         }
     }
 
-    # Static findings summary (if static-findings.json exists)
+    # Static findings summary (if static-findings.json exists).
+    # Older static-findings.json caches use a different `pester` shape
+    # (`{ran:false, error:...}` with no `failed` key). Under StrictMode 3.0,
+    # `$static.pester.failed` throws on those caches and aborts the diff
+    # context build — so probe the property defensively.
     $staticSummary = $null
     $staticPath = Join-Path $cacheDir 'static-findings.json'
     if (Test-Path $staticPath) {
         $static = Get-Content $staticPath -Raw | ConvertFrom-Json
+        $pesterFailed = 0
+        if ($static.PSObject.Properties['pester'] -and $static.pester) {
+            $pesterObj = $static.pester
+            if ($pesterObj.PSObject.Properties['failed']) {
+                $pesterFailed = [int]$pesterObj.failed
+            }
+        }
         $staticSummary = [ordered]@{
             psscriptanalyzer = @($static.psscriptanalyzer ?? @()).Count
             gitleaks         = @($static.gitleaks ?? @()).Count
-            pester_failed    = if ($static.pester) { $static.pester.failed } else { 0 }
+            pester_failed    = $pesterFailed
         }
     }
 
