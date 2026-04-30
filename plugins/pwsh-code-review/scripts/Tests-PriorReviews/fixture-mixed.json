@@ -1,0 +1,146 @@
+{
+  "data": {
+    "repository": {
+      "pullRequest": {
+        "reviewThreads": {
+          "nodes": [
+            {
+              "isResolved": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "path": "scripts/Foo.ps1",
+                    "line": 42,
+                    "body": "Consider using -LiteralPath here.",
+                    "createdAt": "2026-04-30T10:00:00Z",
+                    "author": { "login": "copilot-pull-request-reviewer[bot]" }
+                  },
+                  {
+                    "path": "scripts/Foo.ps1",
+                    "line": 42,
+                    "body": "Reply from author saying thanks, will fix.",
+                    "createdAt": "2026-04-30T10:01:00Z",
+                    "author": { "login": "andresharpe" }
+                  },
+                  {
+                    "path": "scripts/Foo.ps1",
+                    "line": 42,
+                    "body": "Second bot reply on same thread - must NOT count as a separate unresolved entry.",
+                    "createdAt": "2026-04-30T10:02:00Z",
+                    "author": { "login": "copilot-pull-request-reviewer[bot]" }
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": true,
+              "comments": {
+                "nodes": [
+                  {
+                    "path": "scripts/Bar.ps1",
+                    "line": 10,
+                    "body": "Already addressed in 7b9ac02.",
+                    "createdAt": "2026-04-30T09:30:00Z",
+                    "author": { "login": "copilot-pull-request-reviewer[bot]" }
+                  },
+                  {
+                    "path": "scripts/Bar.ps1",
+                    "line": 10,
+                    "body": "Second bot comment in resolved thread - must count as 1 thread, not 2.",
+                    "createdAt": "2026-04-30T09:35:00Z",
+                    "author": { "login": "copilot-pull-request-reviewer[bot]" }
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "path": "scripts/Foo.ps1",
+                    "line": 88,
+                    "body": "Human reviewer comment - no bots in this thread, must be ignored.",
+                    "createdAt": "2026-04-30T10:05:00Z",
+                    "author": { "login": "andresharpe" }
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "path": "scripts/Baz.ps1",
+                    "line": 7,
+                    "body": "[CodeRabbit] suggestion: rename Test-Foo to Confirm-Foo for verb compliance.",
+                    "createdAt": "2026-04-30T10:10:00Z",
+                    "author": { "login": "coderabbitai" }
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "path": "package.json",
+                    "line": 12,
+                    "body": "Bumps lodash from 4.17.20 to 4.17.21.",
+                    "createdAt": "2026-04-30T08:00:00Z",
+                    "author": { "login": "dependabot[bot]" }
+                  }
+                ]
+              }
+            },
+            {
+              "isResolved": false,
+              "comments": {
+                "nodes": [
+                  {
+                    "path": "scripts/Foo.ps1",
+                    "line": 100,
+                    "body": "Author started this thread.",
+                    "createdAt": "2026-04-30T11:00:00Z",
+                    "author": { "login": "andresharpe" }
+                  },
+                  {
+                    "path": "scripts/Foo.ps1",
+                    "line": 100,
+                    "body": "Bot reply later in the thread - thread should still be picked up because comments(first:100) finds the bot.",
+                    "createdAt": "2026-04-30T11:05:00Z",
+                    "author": { "login": "renovate[bot]" }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "reviews": {
+          "nodes": [
+            {
+              "state": "COMMENTED",
+              "body": "Overall LGTM with two suggestions inline.",
+              "createdAt": "2026-04-30T10:00:30Z",
+              "author": { "login": "copilot-pull-request-reviewer[bot]" }
+            },
+            {
+              "state": "APPROVED",
+              "body": "",
+              "createdAt": "2026-04-30T10:11:00Z",
+              "author": { "login": "github-actions[bot]" }
+            },
+            {
+              "state": "COMMENTED",
+              "body": "Looks fine to me.",
+              "createdAt": "2026-04-30T10:15:00Z",
+              "author": { "login": "andresharpe" }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

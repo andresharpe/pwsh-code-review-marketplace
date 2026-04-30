@@ -235,6 +235,68 @@ try {
     [void]$sb.AppendLine($summary)
     [void]$sb.AppendLine()
 
+    # Prior automated-review summary (only when prior-reviews.json exists and
+    # carries any bot activity). Sits above the static-analysis block so the
+    # human reviewer sees what bots have already said before reading new
+    # findings.
+    $priorPath = Join-Path $cacheDir 'prior-reviews.json'
+    $priorReviews = $null
+    if (Test-Path $priorPath) {
+        try {
+            $priorReviews = Get-Content $priorPath -Raw | ConvertFrom-Json -AsHashtable
+        } catch {
+            Write-Verbose "Could not read $priorPath - $($_.Exception.Message)"
+        }
+    }
+    function Get-PriorField {
+        # StrictMode 3 friendly: read a key from the prior-reviews hashtable
+        # without throwing when it's absent.
+        param($ht, [string]$Key)
+        if (-not $ht) { return $null }
+        if ($ht -is [hashtable] -or $ht -is [System.Collections.IDictionary]) {
+            if ($ht.Contains($Key)) { return $ht[$Key] } else { return $null }
+        }
+        if ($ht.PSObject.Properties[$Key]) { return $ht.$Key }
+        return $null
+    }
+
+    $priorUnresolved = @(Get-PriorField $priorReviews 'unresolved_threads')
+    $priorTopLevel   = @(Get-PriorField $priorReviews 'top_level_reviews')
+    $priorResolved   = (Get-PriorField $priorReviews 'resolved_threads_count') ?? 0
+    $priorBots       = @(Get-PriorField $priorReviews 'bots')
+
+    $priorHasContent = ($priorUnresolved.Count -gt 0) -or ($priorTopLevel.Count -gt 0) -or ($priorResolved -gt 0)
+    if ($priorHasContent) {
+        [void]$sb.AppendLine("### Prior agent review summary")
+        [void]$sb.AppendLine()
+        $bots = $priorBots -join ', '
+        if (-not $bots) { $bots = '(none recognised)' }
+        [void]$sb.AppendLine("Bots seen: $bots")
+        [void]$sb.AppendLine()
+
+        [void]$sb.AppendLine("- Unresolved bot threads: $($priorUnresolved.Count)")
+        [void]$sb.AppendLine("- Resolved bot threads: $priorResolved")
+        [void]$sb.AppendLine("- Top-level bot reviews: $($priorTopLevel.Count)")
+        [void]$sb.AppendLine()
+
+        if ($priorUnresolved.Count -gt 0) {
+            [void]$sb.AppendLine('| Bot | File | Line | Comment |')
+            [void]$sb.AppendLine('| --- | ---- | ---- | ------- |')
+            foreach ($t in $priorUnresolved) {
+                # Single-line cell content. Replace pipes/newlines so the table
+                # stays valid.
+                $bot  = Get-PriorField $t 'bot'
+                $path = Get-PriorField $t 'path'
+                $line = Get-PriorField $t 'line'
+                $body = (Get-PriorField $t 'body') ?? ''
+                $body = $body.Trim() -replace '\r?\n', ' ' -replace '\|', '\|'
+                if ($body.Length -gt 140) { $body = $body.Substring(0, 137) + '...' }
+                [void]$sb.AppendLine("| $bot | $path | $line | $body |")
+            }
+            [void]$sb.AppendLine()
+        }
+    }
+
     # Static analysis summary
     [void]$sb.AppendLine("### Static analysis")
     [void]$sb.AppendLine()
