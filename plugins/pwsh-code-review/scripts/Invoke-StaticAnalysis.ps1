@@ -295,6 +295,24 @@ try {
         } -ArgumentList $RepoRoot, $tplScript
     }
 
+    # 9. Test-coverage check: flag functional files in the diff with no
+    #    accompanying test-file change. Only meaningful when running against
+    #    a diff (skipped under -All since a whole-repo scan has no diff to
+    #    reason about).
+    $covScript = Join-Path $PSScriptRoot 'Test-Coverage.ps1'
+    if (-not $All -and (Test-Path $covScript)) {
+        $diffContextPath = Join-Path $cacheDir 'diff-context.json'
+        if (Test-Path $diffContextPath) {
+            $jobs += Start-ThreadJob -Name 'TestCoverage' -ScriptBlock {
+                param($repoRoot, $script, $dcPath)
+                Push-Location $repoRoot
+                try {
+                    , (& $script -RepoRoot $repoRoot -DiffContextPath $dcPath)
+                } finally { Pop-Location }
+            } -ArgumentList $RepoRoot, $covScript, $diffContextPath
+        }
+    }
+
     # Wait for all
     $results = $jobs | Wait-Job | ForEach-Object {
         $name = $_.Name
@@ -316,6 +334,7 @@ try {
         markdownlint      = @()
         test_brittleness  = @()
         template_substitution = @()
+        test_coverage     = @()
         tools_missing     = @()
     }
 
@@ -375,6 +394,17 @@ try {
                     confidence = $_.confidence
                 }
             }) }
+            'TestCoverage'    { $aggregate.test_coverage = @($r.Value | ForEach-Object {
+                @{
+                    rule_name  = $_.rule_name
+                    severity   = $_.severity
+                    file       = $_.file
+                    line       = $_.line
+                    column     = $_.column
+                    message    = $_.message
+                    confidence = $_.confidence
+                }
+            }) }
         }
     }
 
@@ -388,15 +418,16 @@ try {
     $aggregate | ConvertTo-Json -Depth 20 | Set-Content $outputPath -Encoding utf8NoBOM
 
     [pscustomobject]@{
-        OutputPath                  = $outputPath
-        PSSAFindings                = $aggregate.psscriptanalyzer.Count
-        CompatibilityIssues         = $aggregate.compatibility.Count
-        InjectionFindings           = $aggregate.injection_hunter.Count
-        GitleaksFindings            = $aggregate.gitleaks.Count
-        TestBrittlenessFindings     = $aggregate.test_brittleness.Count
+        OutputPath                   = $outputPath
+        PSSAFindings                 = $aggregate.psscriptanalyzer.Count
+        CompatibilityIssues          = $aggregate.compatibility.Count
+        InjectionFindings            = $aggregate.injection_hunter.Count
+        GitleaksFindings             = $aggregate.gitleaks.Count
+        TestBrittlenessFindings      = $aggregate.test_brittleness.Count
         TemplateSubstitutionFindings = $aggregate.template_substitution.Count
-        PesterFailed                = if ($aggregate.pester) { $aggregate.pester.failed } else { 'not-run' }
-        ToolsMissing                = $aggregate.tools_missing
+        TestCoverageFindings         = $aggregate.test_coverage.Count
+        PesterFailed                 = if ($aggregate.pester) { $aggregate.pester.failed } else { 'not-run' }
+        ToolsMissing                 = $aggregate.tools_missing
     }
 } finally {
     Pop-Location
