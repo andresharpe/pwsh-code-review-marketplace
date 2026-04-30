@@ -30,7 +30,21 @@ If the finding describes the same issue at the same line as a finding in `static
 
 If the `file:line_start` falls outside the diff hunks, **drop** unless the finding is explicitly about a call site affected by a contract change in the diff. Reason: `Out of scope (not in diff)`.
 
-### Test 3: is the consequence concrete?
+### Test 3 (security): is the security finding being downgraded for an invisible mitigation?
+
+**Security findings carry an asymmetric cost.** A false negative in security review can ship an exploitable bug; a false positive in security review costs the author a few minutes of explanation. Bias the calibrator the other way for these.
+
+If `finding.agent == 'security'` (or the rule namespace is `PWSH-SEC-NNN`) and you would otherwise drop or downgrade the finding because "the framework probably handles this", "callers usually validate", or "this path is normally sandboxed", **stop**. The finding only drops or downgrades if the mitigation is **visible in the diff** (or in a sibling function explicitly cited by the agent in `evidence[]`). "Probably mitigated by something in the codebase I haven't read" is not a mitigation; it's a guess.
+
+Allowed actions on a security finding without visible mitigation:
+
+- Confirm at the agent's stated severity and confidence.
+- Drop ONLY if Test 1 (duplicates static layer), Test 2 (out of diff scope), or Test 9 (contradicts static layer ground truth) fires. Those are mechanical checks, not judgement calls.
+- Reword for tone (Test 7) — never to imply mitigation that isn't proven.
+
+Reason (when this test prevents a downgrade): not emitted; this test is a guard, not an action.
+
+### Test 4: is the consequence concrete?
 
 For `blocker` and `major` findings, the `consequence` field must name a specific outcome: a caller that breaks, a test that fails, a CVE class, a platform that stops working, an attack scenario. If the consequence is vague ("could be problematic", "is not great", "may cause issues"), **downgrade**:
 
@@ -40,7 +54,7 @@ For `blocker` and `major` findings, the `consequence` field must name a specific
 
 Reason: `Vague consequence, downgraded`.
 
-### Test 4: does the evidence match the severity?
+### Test 5: does the evidence match the severity?
 
 Cross-check `evidence[]` against severity:
 
@@ -50,7 +64,7 @@ Cross-check `evidence[]` against severity:
 
 Reason: `Evidence does not support severity, downgraded`.
 
-### Test 5: does confidence match evidence strength?
+### Test 6: does confidence match evidence strength?
 
 - Confidence 90-100 requires the consequence to be mechanically reproducible from the diff alone. If the agent had to guess, cap at 80.
 - Confidence 80-89 requires direct evidence (cited file:line or commit). If only indirect, cap at 70.
@@ -58,7 +72,7 @@ Reason: `Evidence does not support severity, downgraded`.
 
 Reason: `Confidence not supported by evidence, capped at N`.
 
-### Test 6: does the wording match the confidence?
+### Test 7: does the wording match the confidence?
 
 If confidence is 60-79 and the message is assertive ("This breaks X", "This is wrong"), reword to investigative ("This looks like it could break X", "This appears to violate X, can you confirm?").
 
@@ -66,19 +80,19 @@ If confidence is 80+ and the message is hedged ("This might be wrong", "Consider
 
 Reason: `Wording mismatched to confidence, reworded`.
 
-### Test 7: is it a question phrased as a finding?
+### Test 8: is it a question phrased as a finding?
 
 If the finding does not include a `fix` (the agent does not actually know what to do, just suspects something is wrong), convert to severity `question`. The author replies; the reviewer is not asserting.
 
 Reason: `No fix proposed, converted to question`.
 
-### Test 8: is the static layer ground truth being contradicted?
+### Test 9: is the static layer ground truth being contradicted?
 
 If the finding contradicts a static-layer result (agent says "error here", static layer reported "no issue at this line"), drop unless the finding's `evidence[]` explicitly justifies the divergence. Static layer is ground truth (per `docs/principles.md` rule 17).
 
 Reason: `Contradicts static layer without justification`.
 
-### Test 8.5: is it a prose-only nit?
+### Test 9.5: is it a prose-only nit?
 
 If the finding's `file` matches `*.md`, `*.markdown`, or refers to comment-based help / inline comments, AND the `consequence` describes a wording, grammar, spelling, or punctuation issue, **drop** unless it matches one of the principle-19 exceptions:
 
@@ -90,7 +104,7 @@ Reason: `Prose-only nit, principle 19`.
 
 This test catches the largest noise class observed in real-world AI reviewers.
 
-### Test 9: nit cap
+### Test 10: nit cap
 
 After all other tests, count surviving `nit` findings. If above the configured cap (default 3), keep the highest-confidence ones, drop the rest.
 

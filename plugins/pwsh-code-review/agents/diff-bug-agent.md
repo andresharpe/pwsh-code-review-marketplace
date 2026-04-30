@@ -123,6 +123,24 @@ The `delta.properties_added` field is informational only in v1; no rule fires on
 - Dead branch (condition always true or always false given the type system): flag (`major`, conf 85).
 - Variable shadowed inside a block, written to but the outer is read after: flag (`major`, conf 85).
 
+### Cross-cutting heuristics
+
+These patterns are language-agnostic and high-value when the diff sits between two cooperating layers. They map to rule IDs `PWSH-DIFF-300..306`. Every finding must cite the specific lines that show the pattern in `evidence[]`.
+
+- **`PWSH-DIFF-300` — Identifier / key collision.** When the diff normalises an input to derive a lookup key (strips an extension, lowercases, trims a prefix, slugifies), verify that two distinct inputs cannot map to the same key. Example: stripping both `.md` and `.json` produces `foo.md` and `foo.json` colliding on `foo`. Severity `major`, conf 80 if the colliding inputs are demonstrable from existing call sites; `minor`, conf 70 if hypothetical.
+
+- **`PWSH-DIFF-301` — Alias / normalisation consistency.** When code resolves an alias or fallback (a default name, a slug, a shortened ID), check that the resolved canonical value is propagated to every downstream consumer. Common bug: the lookup variable is corrected (`$dir = $fallbackDir`) but the name variable (`$name`) is not, so downstream operations (task creation, filter, stop signals) use the alias instead of the canonical value. Severity `major`, conf 85.
+
+- **`PWSH-DIFF-302` — Write-without-read.** When the diff writes data to a file path (state file, prompt, config), grep the codebase for any reader of that exact path. Two failure modes: (1) no reader at all (orphan write), (2) the codebase already has an established canonical path for that data and this is a divergent location. The plugin's existing shape-tracking covers in-memory shapes; this rule covers on-disk paths. Severity `major`, conf 80. Cite the write site and either the absent-reader observation or the established canonical path.
+
+- **`PWSH-DIFF-303` — Sibling function parity.** When the diff modifies one of a clearly-related pair (`Invoke-Foo` and `Invoke-FooStream`, `Get-X` and `Set-X`, `Read-Y` and `Write-Y`), inspect the sibling. If the sibling does encoding setup, error handling, executable resolution, or parameter validation that the modified function does not, the modified function probably should too — or the sibling has stale defensive code that should also be removed. Severity `major`, conf 80 when the sibling has a behaviour the modified function lacks; `minor`, conf 70 when the asymmetry is plausibly intentional.
+
+- **`PWSH-DIFF-304` — Regex precision.** When the diff adds or modifies a regex, check both directions: (a) over-match — does it match input it should skip? Example: `\[[0-9;?]*[@-~]` for ANSI-stripping also matches normal text like `[1]` because `]` is in `[@-~]`. (b) under-match — does it miss common variants of the target pattern? Example: a `Closes #N` regex that misses `Closes: #N` or `Closes owner/repo#N`. Severity `major`, conf 80 when a concrete miss/over-match is demonstrable; `minor`, conf 70 when the case is hypothetical.
+
+- **`PWSH-DIFF-305` — State mutation order.** When code clears or resets state (closes a modal, nulls a cache, clears a session) and then reads a value that was part of that state, verify the read happens BEFORE the clear. Common bug: `closeModal()` sets `$current = $null`, then the next line uses `$current.Name` for a toast or log entry. Severity `major`, conf 85.
+
+- **`PWSH-DIFF-306` — Placeholder / broken references.** Flag any `REPLACE_ME`, `TODO`, `FIXME`, `TBD`, or `XXX` token left in non-comment code or in user-facing strings (CLI output, error messages, generated files). Also flag references to files or paths that do not exist in the repo (e.g., a doc link to `docs/adr/` when the actual path is `workspace/decisions/`). Severity `major`, conf 90 for placeholders in user-facing strings; `minor`, conf 75 for stray placeholders in code. For broken file refs, severity `major`, conf 95 (mechanically verifiable).
+
 ### Resource leaks
 
 - New `[System.IO.StreamReader]`, `[System.IO.File]::Open`, `New-Object System.Net.Sockets.TcpClient`: must be disposed. Flag (`major`, conf 90) if no `try/finally` with `.Dispose()` or `using:` (pwsh 7+).
