@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "pwsh-code-review-marketplace",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Marketplace hosting the pwsh-code-review plugin: multi-agent code review for PowerShell 7+.",
   "owner": {
     "name": "DOTBOT"
@@ -10,7 +10,7 @@
     {
       "name": "pwsh-code-review",
       "description": "Multi-agent code review for PowerShell 7+ projects. Cross-platform aware, diff-focused, deterministic-first. Five specialised agents (conventions, pwsh idioms, diff bugs, security, history) with severity + confidence scoring and a calibration pass.",
-      "version": "0.18.0",
+      "version": "0.19.0",
       "source": "./plugins/pwsh-code-review",
       "category": "code-quality",
       "keywords": [
