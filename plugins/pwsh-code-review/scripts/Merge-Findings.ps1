@@ -68,7 +68,7 @@ try {
     $static = if (Test-Path $staticPath) {
         Get-Content $staticPath -Raw | ConvertFrom-Json -AsHashtable
     } else {
-        @{ psscriptanalyzer = @(); compatibility = @(); injection_hunter = @(); gitleaks = @(); pester = $null; markdownlint = @(); test_brittleness = @(); template_substitution = @(); test_coverage = @(); tools_missing = @() }
+        @{ psscriptanalyzer = @(); compatibility = @(); injection_hunter = @(); gitleaks = @(); pester = $null; markdownlint = @(); test_brittleness = @(); template_substitution = @(); test_coverage = @(); eslint = @(); tools_missing = @(); tools_errors = @() }
     }
 
     # Load calibrated agent findings
@@ -90,9 +90,11 @@ try {
 
     $staticAsFindings = @()
 
-    # PSScriptAnalyzer & Compatibility & InjectionHunter & heuristic sources
+    # PSScriptAnalyzer & Compatibility & InjectionHunter & ESLint & heuristic sources.
+    # ESLint reports are deterministic (linter output, confidence 100), so they
+    # join the deterministic-static bucket alongside PSSA / compatibility.
     $heuristicSources = @('test_brittleness', 'template_substitution', 'test_coverage')
-    foreach ($cat in @('psscriptanalyzer', 'compatibility', 'injection_hunter') + $heuristicSources) {
+    foreach ($cat in @('psscriptanalyzer', 'compatibility', 'injection_hunter', 'eslint') + $heuristicSources) {
         foreach ($f in @($static[$cat])) {
             if (-not $f) { continue }
             $sev = $staticToOur[$f.severity] ?? 'minor'
@@ -304,6 +306,9 @@ try {
     [void]$sb.AppendLine("- PSScriptAnalyzer: $pssaCount finding(s)")
     [void]$sb.AppendLine("- InjectionHunter: $(@($static.injection_hunter).Count) finding(s)")
     [void]$sb.AppendLine("- Gitleaks: $(@($static.gitleaks).Count) finding(s)")
+    if ($static.ContainsKey('eslint')) {
+        [void]$sb.AppendLine("- ESLint: $(@($static.eslint).Count) finding(s)")
+    }
     if ($static.ContainsKey('test_brittleness')) {
         $tbRaw  = @($static.test_brittleness).Count
         $tbKept = @($passedStaticHeuristic | Where-Object { $_.source -eq 'test_brittleness' }).Count
@@ -338,6 +343,31 @@ try {
     }
     if ($static.tools_missing -and @($static.tools_missing).Count -gt 0) {
         [void]$sb.AppendLine("- Tools missing on PATH: $((@($static.tools_missing)) -join ', ')")
+        # Per-tool install hints. Only emit hints for tools that are in the
+        # missing list AND have a portable install command we can recommend.
+        $hints = @{
+            'eslint'              = 'npm install -g eslint'
+            'gitleaks'            = 'See https://github.com/gitleaks/gitleaks for platform-specific install'
+            'markdownlint-cli2'   = 'npm install -g markdownlint-cli2'
+            'actionlint'          = 'See https://github.com/rhysd/actionlint for platform-specific install'
+            'editorconfig-checker' = 'See https://editorconfig-checker.github.io/ for install'
+        }
+        foreach ($tool in @($static.tools_missing)) {
+            if ($hints.ContainsKey($tool)) {
+                [void]$sb.AppendLine("  - To install ``$tool``: ``$($hints[$tool])``")
+            }
+        }
+    }
+    # Tools that ran but failed at runtime — surface so a "0 findings"
+    # result is never silently a tool failure.
+    if ($static.ContainsKey('tools_errors') -and @($static.tools_errors).Count -gt 0) {
+        [void]$sb.AppendLine("- Tools that errored during the run:")
+        foreach ($te in @($static.tools_errors)) {
+            $msg = ($te.message ?? '').ToString().Trim()
+            if ($msg.Length -gt 200) { $msg = $msg.Substring(0, 197) + '...' }
+            $msg = $msg -replace '\r?\n', ' '
+            [void]$sb.AppendLine("  - ``$($te.tool)`` (exit $($te.exit)): $msg")
+        }
     }
     [void]$sb.AppendLine()
 
