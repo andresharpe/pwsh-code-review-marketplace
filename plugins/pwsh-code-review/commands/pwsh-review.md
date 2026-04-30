@@ -27,7 +27,7 @@ Before doing any work, verify:
 1. The repo is a git repo. If not, exit with a message.
 2. There are actual changes to review (`git diff` non-empty for the chosen mode). If empty, exit cleanly with "No changes to review."
 3. The PR (if `--pr`) is not closed, draft, or already reviewed by this plugin in its current SHA. Skip with explanation.
-4. The project profile exists at `.pwsh-review/`. If not, prompt the user to run `/pwsh-review-bootstrap` first. Do not silently fall back to defaults.
+4. The project profile exists at `.pwsh-review/`. If not, run `scripts/Resolve-Profile.ps1 -BaseRef <base>` to restore any files present on the base ref (covers the case where a PR branched off main BEFORE the profile was added). Only prompt the user to run `/pwsh-review-bootstrap` when the profile is missing on both the branch AND the base ref. Do not silently fall back to defaults.
 5. Required pwsh modules are installed (`PSScriptAnalyzer`, `Pester`). If missing, install them silently (Scope: CurrentUser) before continuing.
 
 ## Phase 1: deterministic pre-pass

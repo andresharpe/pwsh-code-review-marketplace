@@ -64,7 +64,28 @@ try {
 
     $settingsPath = Join-Path $RepoRoot '.pwsh-review/PSScriptAnalyzerSettings.psd1'
     if (-not (Test-Path $settingsPath)) {
-        throw "PSScriptAnalyzerSettings.psd1 not found at $settingsPath. Run /pwsh-review-bootstrap first."
+        # When running on a PR branch that forked off main BEFORE the profile
+        # was added, .pwsh-review/ is absent on the branch but present on the
+        # base ref. Try to restore from the base before failing — running
+        # /pwsh-review-bootstrap on a branch that is just behind would
+        # regenerate the profile and pollute the diff.
+        $resolveScript = Join-Path $PSScriptRoot 'Resolve-Profile.ps1'
+        if (Test-Path $resolveScript) {
+            $diffContextPath = Join-Path $cacheDir 'diff-context.json'
+            $baseRef = 'origin/main'
+            if (Test-Path $diffContextPath) {
+                try {
+                    $dc = Get-Content $diffContextPath -Raw | ConvertFrom-Json
+                    if ($dc.diff_base) { $baseRef = $dc.diff_base }
+                } catch {
+                    Write-Verbose "Could not read $diffContextPath; using default base ref."
+                }
+            }
+            & $resolveScript -RepoRoot $RepoRoot -BaseRef $baseRef | Out-Null
+        }
+        if (-not (Test-Path $settingsPath)) {
+            throw "PSScriptAnalyzerSettings.psd1 not found at $settingsPath. Run /pwsh-review-bootstrap first, or rebase this branch onto a base that carries .pwsh-review/."
+        }
     }
 
     # Determine scope
