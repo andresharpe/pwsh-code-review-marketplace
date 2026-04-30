@@ -136,6 +136,12 @@ Assert-True 'NoPR: zero top-level reviews'  ($noPr.top_level_reviews.Count -eq 0
 # --- Scenario 4: Test-IsBotAuthor unit checks via the production helper -----
 # These call the SAME function the live script uses (dot-sourced above).
 Assert-True 'Detect: copilot[bot] -> bot'             (Test-IsBotAuthor 'copilot-pull-request-reviewer[bot]')
+# GitHub's newer Copilot reviewer login has no [bot] suffix. Confirmed
+# present on real PRs (andresharpe/dotbot #385/#386/#387). Without an
+# explicit known-list entry the regex misses it and prior-reviews comes
+# back empty, so the agents never see the existing bot review activity.
+Assert-True 'Detect: copilot-pull-request-reviewer (no suffix) -> bot' `
+    (Test-IsBotAuthor 'copilot-pull-request-reviewer')
 Assert-True 'Detect: dependabot[bot] -> bot'          (Test-IsBotAuthor 'dependabot[bot]')
 Assert-True 'Detect: renovate[bot] -> bot'            (Test-IsBotAuthor 'renovate[bot]')
 Assert-True 'Detect: codecov[bot] -> bot'             (Test-IsBotAuthor 'codecov[bot]')

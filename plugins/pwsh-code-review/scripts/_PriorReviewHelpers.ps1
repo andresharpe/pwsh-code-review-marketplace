@@ -25,6 +25,12 @@ $script:KnownBotLogins = @(
     'renovate-bot'
     'codecov'
     'codecov-commenter'
+    # GitHub's newer Copilot review reviewer login. Reviews from this account
+    # have no `[bot]` suffix, so the regex misses them and prior-reviews.json
+    # comes out empty. Confirmed against repos andresharpe/dotbot PRs #385,
+    # #386, #387 — all four threads visible in the GraphQL response had this
+    # author and were silently ignored.
+    'copilot-pull-request-reviewer'
 )
 
 function Test-IsBotAuthor {
