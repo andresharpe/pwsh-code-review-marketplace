@@ -91,9 +91,9 @@ This is the area where this plugin earns its keep. Be aggressive here.
 
 ### Here-string escape discipline
 
-Inside double-quoted here-strings (`@"..."@`), `$variable` interpolates and `\$variable` is **literal text**. Backslash is not an escape character in PowerShell -- backtick is. Templated configuration files written via here-strings are the canonical place this trap lands.
+Inside double-quoted here-strings (`@"..."@`), `$variable` interpolates, and `\$variable` does **not** suppress interpolation: the backslash is literal and `$variable` still expands. Backslash is not an escape character in PowerShell -- backtick is. Templated configuration files written via here-strings are the canonical place this trap lands.
 
-- New `\$` inside `@"..."@`: flag (`major`, conf 90). The author intended a literal `$variable` in the output but will get the verbatim string `\$variable`. Two correct fixes: (a) use a single-quoted here-string `@'...'@` and concatenate interpolated bits if needed, or (b) escape with backtick: `` `$variable ``.
+- New `\$` inside `@"..."@`: flag (`major`, conf 90). The author likely intended a literal `$variable` in the output, but in PowerShell this yields a leading backslash plus the expanded value of `$variable` -- and throws under `Set-StrictMode -Version 3.0` if `$variable` is not defined in scope. Two correct fixes: (a) use a single-quoted here-string `@'...'@` and concatenate interpolated bits if needed, or (b) escape with backtick: `` `$variable ``.
 - Single-quoted here-string (`@'...'@`) containing what looks like a backtick escape (`` `$x ``): flag (`minor`, conf 75). Inside `@'...'@` everything is literal -- the backtick will land in the output as a stray character. Either drop the backtick or switch to `@"..."@`.
 - Double-quoted here-string interpolating a sub-expression that is itself sensitive to `Set-StrictMode` (e.g. `$($obj.MaybeMissing)`): flag (`minor`, conf 70). Wrap the expression in a presence guard or move it out of the string.
 
