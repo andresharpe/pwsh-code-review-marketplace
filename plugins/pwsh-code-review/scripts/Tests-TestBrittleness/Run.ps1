@@ -47,6 +47,7 @@ $expected = [ordered]@{
     'R7-MockShadowing.Tests.ps1'      = 'PWSH-TEST-007'
     'R8-CleanupOutsideFinally.Tests.ps1' = 'PWSH-TEST-008'
     'R9-RegexAnchor.Tests.ps1'        = 'PWSH-TEST-009'
+    'R10-LooseCount.Tests.ps1'        = 'PWSH-TEST-010'
 }
 
 $negatives = @(
