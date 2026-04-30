@@ -163,7 +163,7 @@ If the project has its own conventions that contradict the template, preserve th
 20 entries maximum. All marked TODO. If you cannot infer the definition, say so explicitly:
 
 ```markdown
-### Worktree
+### Widget
 
 <!-- TODO: confirm definition -->
 Domain term, appears in 47 places. Not auto-inferable from context.

@@ -173,7 +173,7 @@ Result:
 "tests_for": {
   "New-Widget": [
     "tests/New-Widget.Tests.ps1",
-    "tests/integration/Worktree.Integration.Tests.ps1"
+    "tests/integration/Widget.Integration.Tests.ps1"
   ]
 }
 ```
