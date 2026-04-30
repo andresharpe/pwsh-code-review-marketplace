@@ -40,6 +40,12 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 3.0
 
+# Plugin version (rendered into the review markdown header and footer
+# so reviewers can tell which build of the plugin produced this output).
+. (Join-Path $PSScriptRoot '_PluginVersion.ps1')
+$pluginRoot    = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$pluginVersion = Get-PluginVersion -PluginRoot $pluginRoot
+
 Push-Location $RepoRoot
 try {
     $cacheDir = Join-Path $RepoRoot '.pwsh-review/cache'
@@ -216,6 +222,8 @@ try {
 
     [void]$sb.AppendLine("## Code review ($diffMode)")
     [void]$sb.AppendLine()
+    [void]$sb.AppendLine("_pwsh-code-review v${pluginVersion}_")
+    [void]$sb.AppendLine()
 
     $summary = @(
         "$($counts.blocker) blocker"
@@ -314,7 +322,7 @@ try {
 
     [void]$sb.AppendLine("---")
     [void]$sb.AppendLine()
-    [void]$sb.AppendLine("_Reviewed by pwsh-code-review. Use ``# pwsh-review:disable-next-line <rule>`` to suppress._")
+    [void]$sb.AppendLine("_Reviewed by pwsh-code-review v$pluginVersion. Use ``# pwsh-review:disable-next-line <rule>`` to suppress._")
 
     $markdown = $sb.ToString()
     $markdown | Set-Content $OutputPath -Encoding utf8NoBOM

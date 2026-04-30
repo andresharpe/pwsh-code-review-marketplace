@@ -38,6 +38,11 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 3.0
 
+# Plugin version (emitted into the index for traceability).
+. (Join-Path $PSScriptRoot '_PluginVersion.ps1')
+$pluginRoot    = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$pluginVersion = Get-PluginVersion -PluginRoot $pluginRoot
+
 $cacheDir = Join-Path $RepoRoot '.pwsh-review/cache'
 $indexPath = Join-Path $cacheDir 'ast-index.json'
 
@@ -49,6 +54,7 @@ if (-not (Test-Path $cacheDir)) {
 $index = if ($Cold -or -not (Test-Path $indexPath)) {
     [ordered]@{
         schema_version   = '1'
+        plugin_version   = $pluginVersion
         generated        = (Get-Date).ToUniversalTime().ToString('o')
         files            = [ordered]@{}
         function_to_file = [ordered]@{}
@@ -59,6 +65,7 @@ $index = if ($Cold -or -not (Test-Path $indexPath)) {
     $loaded = Get-Content $indexPath -Raw | ConvertFrom-Json -AsHashtable
     [ordered]@{
         schema_version   = $loaded.schema_version
+        plugin_version   = $pluginVersion
         generated        = (Get-Date).ToUniversalTime().ToString('o')
         files            = [ordered]@{} + $loaded.files
         function_to_file = [ordered]@{}

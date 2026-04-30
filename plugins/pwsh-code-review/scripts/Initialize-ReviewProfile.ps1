@@ -45,12 +45,8 @@ Set-StrictMode -Version 3.0
 Push-Location $RepoRoot
 try {
     # Read plugin version so the user can see which build is running
-    $pluginManifestPath = Join-Path $PluginRoot '.claude-plugin/plugin.json'
-    $pluginVersion = if (Test-Path $pluginManifestPath) {
-        (Get-Content $pluginManifestPath -Raw | ConvertFrom-Json).version
-    } else {
-        'unknown'
-    }
+    . (Join-Path $PSScriptRoot '_PluginVersion.ps1')
+    $pluginVersion = Get-PluginVersion -PluginRoot $PluginRoot
     Write-Host "pwsh-code-review v$pluginVersion - bootstrap" -ForegroundColor Cyan
     Write-Host ""
 

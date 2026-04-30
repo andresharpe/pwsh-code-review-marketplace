@@ -39,6 +39,13 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 3.0
 
+# Plugin version (printed as a banner and embedded in static-findings.json
+# so consumers can tell which build of the plugin produced the review).
+. (Join-Path $PSScriptRoot '_PluginVersion.ps1')
+$pluginRoot    = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$pluginVersion = Get-PluginVersion -PluginRoot $pluginRoot
+Write-Host "pwsh-code-review v$pluginVersion - review" -ForegroundColor Cyan
+
 Push-Location $RepoRoot
 try {
     $cacheDir = Join-Path $RepoRoot '.pwsh-review/cache'
@@ -299,6 +306,7 @@ try {
     # Aggregate
     $aggregate = [ordered]@{
         schema_version    = '1'
+        plugin_version    = $pluginVersion
         generated         = (Get-Date).ToUniversalTime().ToString('o')
         psscriptanalyzer  = @()
         compatibility     = @()
