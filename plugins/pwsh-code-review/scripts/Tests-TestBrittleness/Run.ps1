@@ -38,11 +38,15 @@ foreach ($f in $findings) {
 }
 
 $expected = [ordered]@{
-    'R1-Count.Tests.ps1'         = 'PWSH-TEST-001'
-    'R2-MultilineRegex.Tests.ps1' = 'PWSH-TEST-002'
-    'R3-SortUnique.Tests.ps1'    = 'PWSH-TEST-003'
-    'R4-HashKeys.Tests.ps1'      = 'PWSH-TEST-004'
-    'R5-WindowsPath.Tests.ps1'   = 'PWSH-TEST-005'
+    'R1-Count.Tests.ps1'              = 'PWSH-TEST-001'
+    'R2-MultilineRegex.Tests.ps1'     = 'PWSH-TEST-002'
+    'R3-SortUnique.Tests.ps1'         = 'PWSH-TEST-003'
+    'R4-HashKeys.Tests.ps1'           = 'PWSH-TEST-004'
+    'R5-WindowsPath.Tests.ps1'        = 'PWSH-TEST-005'
+    'R6-FalsePositive.Tests.ps1'      = 'PWSH-TEST-006'
+    'R7-MockShadowing.Tests.ps1'      = 'PWSH-TEST-007'
+    'R8-CleanupOutsideFinally.Tests.ps1' = 'PWSH-TEST-008'
+    'R9-RegexAnchor.Tests.ps1'        = 'PWSH-TEST-009'
 }
 
 $negatives = @(
