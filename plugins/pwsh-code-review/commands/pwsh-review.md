@@ -40,6 +40,7 @@ Run `scripts/Invoke-StaticAnalysis.ps1` against the diff scope. This runs in par
 - Gitleaks (if available on `$PATH`)
 - Pester (only if test files are touched, or run lightweight test discovery)
 - markdownlint, actionlint, editorconfig-checker (if available, only on relevant file types)
+- eslint (if available — only when the diff touches `.js` / `.mjs` / `.cjs` / `.ts` / `.tsx` AND `eslint` is on PATH or appears in the project's `package.json`)
 
 The output is a JSON document at `.pwsh-review/cache/static-findings.json`:
 
@@ -126,6 +127,7 @@ Agents (always dispatched):
 Conditional agents (dispatched only when the trigger applies):
 
 6. **`agents/markdown-content-agent.md`** - cross-file documentation integrity (reference drift, broken refs, glossary contradictions, claim drift, fence/prose mismatches). **Dispatch only when the diff touches at least one `*.md` or `*.markdown` file.** When the diff has no markdown changes, skip this agent entirely (zero cost).
+7. **`agents/js-content-agent.md`** - JavaScript / TypeScript content correctness and security-class traps eslint and `tsc` cannot catch (listener / timer leaks, missing `fetch` / `JSON.parse` error paths, type-coercion bugs, DOM injection bypassing the project's documented HTML escaper, prototype pollution, open redirects, sanitize-then-check ordering). Rule namespace `PWSH-JS-NNN`. **Dispatch only when the diff touches at least one `*.js`, `*.mjs`, `*.cjs`, `*.ts`, or `*.tsx` file.** Reads `.pwsh-review/standards.md` for the project-specific escaper name; falls back to a generic warning when none is documented.
 
 Each agent emits findings as JSON conforming to the schema in `docs/severity-rubric.md`. Agents do not see each other's findings during the dispatch phase.
 

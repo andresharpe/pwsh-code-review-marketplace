@@ -313,6 +313,89 @@ try {
         }
     }
 
+    # 10. eslint (optional, opportunistic). Only fires when:
+    #       (a) the diff touches a JS/TS file (or -All), AND
+    #       (b) eslint is reachable via either an `eslint` on PATH or a
+    #           local `node_modules/.bin/eslint` from `npx eslint`.
+    #     Most PowerShell projects do not bring an eslint config; the
+    #     opportunistic gate keeps the runner zero-cost in that case.
+    $jsExts = @('.js', '.mjs', '.cjs', '.ts', '.tsx')
+    # PowerShell unwraps single-element arrays returned from an `if`
+    # expression, so a one-file diff would land here as a bare string and
+    # crash the .Count check below under strict mode. Force-rewrap.
+    $jsScope = @(if ($All) {
+        @('.')
+    } else {
+        @($scopePaths | Where-Object {
+            $ext = [IO.Path]::GetExtension($_).ToLowerInvariant()
+            $ext -in $jsExts
+        })
+    })
+    $eslintWantedButMissing = $false
+    if ($jsScope.Count -gt 0) {
+        $eslintAvailable = $false
+        $eslintCmd = $null
+        if (Get-Command eslint -ErrorAction SilentlyContinue) {
+            $eslintAvailable = $true
+            $eslintCmd = 'eslint'
+        } elseif (Test-Path (Join-Path $RepoRoot 'package.json')) {
+            # `npx eslint` works when eslint is in the project's
+            # devDependencies even if it's not on PATH globally.
+            if (Get-Command npx -ErrorAction SilentlyContinue) {
+                $eslintAvailable = $true
+                $eslintCmd = 'npx'
+            }
+        }
+
+        if (-not $eslintAvailable) {
+            # Surface a clear, actionable install hint. We DON'T auto-install
+            # — npm globals are a user decision. We DO surface the gap so the
+            # human running /pwsh-review knows JS lint was skipped and how to
+            # turn it on.
+            $eslintWantedButMissing = $true
+            Write-Warning @"
+ESLint is not reachable. JS/TS lint will be skipped on this run.
+The diff touches: $(($jsScope | Select-Object -First 5) -join ', ')$(if ($jsScope.Count -gt 5) { ", +$($jsScope.Count - 5) more" })
+
+To enable, install one of:
+  - Globally:    npm install -g eslint
+  - Per-project: npm install --save-dev eslint   (then re-run /pwsh-review)
+"@
+        }
+
+        if ($eslintAvailable) {
+            $jobs += Start-ThreadJob -Name 'ESLint' -ScriptBlock {
+                param($repoRoot, $cmd, $files)
+                Push-Location $repoRoot
+                try {
+                    $args = if ($cmd -eq 'npx') { @('eslint', '--format', 'json') + $files }
+                            else { @('--format', 'json') + $files }
+                    $output = & $cmd @args 2>$null
+                    if (-not $output) { return @() }
+                    $reports = $output | ConvertFrom-Json -ErrorAction SilentlyContinue
+                    if (-not $reports) { return @() }
+                    $findings = @()
+                    foreach ($r in $reports) {
+                        foreach ($m in @($r.messages)) {
+                            $findings += [ordered]@{
+                                rule_name = "eslint/$($m.ruleId ?? 'parse-error')"
+                                # eslint severity: 1=warning, 2=error
+                                severity  = if ([int]$m.severity -eq 2) { 'Error' } else { 'Warning' }
+                                file      = $r.filePath
+                                line      = [int]($m.line ?? 0)
+                                column    = [int]($m.column ?? 0)
+                                message   = $m.message
+                            }
+                        }
+                    }
+                    , $findings
+                } catch {
+                    , @()
+                } finally { Pop-Location }
+            } -ArgumentList $RepoRoot, $eslintCmd, $jsScope
+        }
+    }
+
     # Wait for all
     $results = $jobs | Wait-Job | ForEach-Object {
         $name = $_.Name
@@ -335,6 +418,7 @@ try {
         test_brittleness  = @()
         template_substitution = @()
         test_coverage     = @()
+        eslint            = @()
         tools_missing     = @()
     }
 
@@ -405,6 +489,16 @@ try {
                     confidence = $_.confidence
                 }
             }) }
+            'ESLint'          { $aggregate.eslint = @($r.Value | ForEach-Object {
+                @{
+                    rule_name = $_.rule_name
+                    severity  = $_.severity
+                    file      = $_.file
+                    line      = $_.line
+                    column    = $_.column
+                    message   = $_.message
+                }
+            }) }
         }
     }
 
@@ -412,6 +506,11 @@ try {
         if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
             $aggregate.tools_missing += $tool
         }
+    }
+    # eslint only goes on the missing list when the diff would have used it.
+    # An all-PowerShell repo doesn't need eslint and shouldn't be told it does.
+    if ($eslintWantedButMissing) {
+        $aggregate.tools_missing += 'eslint'
     }
 
     $outputPath = Join-Path $cacheDir 'static-findings.json'
@@ -426,6 +525,7 @@ try {
         TestBrittlenessFindings      = $aggregate.test_brittleness.Count
         TemplateSubstitutionFindings = $aggregate.template_substitution.Count
         TestCoverageFindings         = $aggregate.test_coverage.Count
+        ESLintFindings               = $aggregate.eslint.Count
         PesterFailed                 = if ($aggregate.pester) { $aggregate.pester.failed } else { 'not-run' }
         ToolsMissing                 = $aggregate.tools_missing
     }
