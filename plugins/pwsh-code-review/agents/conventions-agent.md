@@ -86,6 +86,19 @@ If a finding falls outside your scope, drop it.
 - New error handling diverges from `patterns/pattern-error-handling.ps1`: flag (`minor`), cite the pattern.
 - New module init diverges from `patterns/pattern-module-init.psm1`: flag (`minor`), cite the pattern.
 
+### Error suppression discipline
+
+Silent error suppression is sometimes correct (probing for optional state, polling) but is a maintenance trap when the next reader cannot tell whether the suppression is intentional or sloppy. Require an explicit justification comment.
+
+- New `-ErrorAction SilentlyContinue` (or `-EA SilentlyContinue`, or the same value passed through a splat hashtable) on a cmdlet, with no explicit justification comment within one line of the call: flag (`minor`, conf 80). Any of the following count as an explicit justification:
+  - Trailing comment on the same line: `Get-Foo -EA SilentlyContinue  # probe; absence is the answer`
+  - Comment on the line immediately above: `# why: path expected to be missing during bootstrap`
+  - Block comment immediately above the call: `<# why: ... #>`
+  Splat-form (`-EA SilentlyContinue` set via a `$splat = @{ ErrorAction = 'SilentlyContinue' }`): flag the call site, not the splat construction. The justification comment can sit at either site.
+- Drop the finding when the call is to one of these probe cmdlets, where suppression is the standard idiom and a justification comment would be noise: `Test-Path`, `Get-Command`, `Get-Module`, `Get-Variable`. Also drop on `Get-Item` whose `-Path` argument starts with `Variable:`, `Function:`, or `Alias:` (a PSDrive probe of the runtime, not a filesystem read).
+- New `-ErrorAction Ignore` on any cmdlet, regardless of any comment: flag (`major`, conf 80). `Ignore` discards the error from `$Error` entirely, so even post-hoc debugging is impossible. Recommend `SilentlyContinue` plus an explicit justification when the caller really does want to swallow the error.
+- Empty `catch { }` block: out of scope here -- the diff-bug agent owns it (see "Error contract"). Do not re-flag.
+
 ### Comment quality
 
 - Comment that restates the code (`# increment counter` above `$counter++`): flag (`nit`).

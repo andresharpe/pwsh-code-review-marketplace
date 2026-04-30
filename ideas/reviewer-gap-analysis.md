@@ -126,6 +126,7 @@ The previous two sections fit together as a closed loop:
 | 2026-04-30 | PR-B (#38) | Vocabulary validation at boundary (PWSH-DIFF-307) | diff-bug-agent |
 | 2026-04-30 | PR-B (#38) | Comment-as-contract mismatch (PWSH-DIFF-308) | diff-bug-agent |
 | 2026-04-30 | PR-B (#38) | Per-path status-field correctness (PWSH-DIFF-309) | diff-bug-agent |
+| 2026-04-30 | PR-C (#39) | `-ErrorAction SilentlyContinue` / `Ignore` without inline justification | conventions-agent |
 
 ---
 
