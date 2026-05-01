@@ -143,7 +143,7 @@ Inside double-quoted here-strings (`@"..."@`), `$variable` interpolates, and `\$
 
 ### Template substitution
 
-The static layer flags `{{TOKEN}}` misuse in markdown under `PWSH-TPL-001` (unknown token, no `-replace` rule) and `PWSH-TPL-002` (dead "if `{{X}}` is empty" prose where `X` is provably always non-empty). Do not re-flag these -- the static layer owns them. You may upgrade a `PWSH-TPL-002` finding from `minor` to `major` only when you can read the corresponding `-replace` source and confirm the dead-conditional reasoning. Otherwise leave it alone.
+The static layer flags uppercase placeholder misuse (regex `\{\{[A-Z][A-Z0-9_]*\}\}`) in markdown under `PWSH-TPL-001` (unknown token, no `-replace` rule) and `PWSH-TPL-002` (dead "if the placeholder is empty" prose where the placeholder is provably always non-empty). The lowercase shape used in this paragraph (e.g. `{{token-name}}`) sits deliberately outside the regex so the documentation can describe the rule without triggering it. Do not re-flag the rules at the agent layer -- the static layer owns them. You may upgrade a `PWSH-TPL-002` finding from `minor` to `major` only when you can read the corresponding `-replace` source and confirm the dead-conditional reasoning. Otherwise leave it alone.
 
 ### Output stream choice
 

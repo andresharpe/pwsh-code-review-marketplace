@@ -30,13 +30,27 @@
 .PARAMETER RepoRoot
     Repository root.
 
+.PARAMETER ExcludeFixtures
+    When set, skip files whose path traverses a `Tests-<topic>/` directory.
+    Those are scanner fixtures by convention -- the templates-without-
+    a-substitution-rule demo files inside Tests-TemplateSubstitution/
+    demonstrate the rule, they are not active templates. The static
+    analysis orchestrator (Invoke-StaticAnalysis.ps1) sets this during a
+    full review; the self-test runner leaves it off so it can scan its
+    own fixtures.
+
 .OUTPUTS
     Array of PSSA-shape hashtables with an additional `confidence` field.
 #>
 [CmdletBinding()]
 [OutputType([object[]])]
 param(
-    [string]$RepoRoot = (Get-Location).Path
+    [string]$RepoRoot = (Get-Location).Path,
+    # Skip files inside `Tests-<topic>/` directories. Set by the static
+    # analysis orchestrator during a full review to silence self-referential
+    # findings on scanner fixtures (templates-with-no-substitution-rule
+    # demo files). Self-test runners (Tests-*/Run.ps1) leave it off.
+    [switch]$ExcludeFixtures
 )
 
 $ErrorActionPreference = 'Stop'
@@ -237,6 +251,14 @@ try {
             if ($full -match '/\.pwsh-review/' -or
                 $full -match '/\.git/' -or
                 $full -match '/node_modules/') { return $false }
+            # Files inside `Tests-<topic>/` are by-convention scanner fixtures
+            # (inputs to a sibling Run.ps1), not active templates. They will
+            # frequently contain `{{TOKEN}}` references for demonstration that
+            # have no corresponding `-replace` rule, which is exactly what
+            # PWSH-TPL-001 looks for -- skip to avoid self-reference noise.
+            # Gated on -ExcludeFixtures so the self-test runner can still
+            # scan its own fixtures.
+            if ($ExcludeFixtures -and $full -match '/Tests-[^/]+/') { return $false }
             $relative = $full
             if ($relative.StartsWith($repoRootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
                 $relative = $relative.Substring($repoRootPrefix.Length)

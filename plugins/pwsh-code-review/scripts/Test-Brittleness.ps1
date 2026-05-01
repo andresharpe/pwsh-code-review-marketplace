@@ -23,6 +23,14 @@
 .PARAMETER All
     Recursively scan the whole repo for matching test files.
 
+.PARAMETER ExcludeFixtures
+    When set, skip files whose path traverses a `Tests-<topic>/` directory.
+    Those are scanner fixtures by convention -- inputs to a sibling
+    Run.ps1 that demonstrate the rule, not real test files. The static
+    analysis orchestrator (Invoke-StaticAnalysis.ps1) sets this during a
+    full review; self-test runners (Tests-*/Run.ps1) leave it off so they
+    can still scan their own fixtures.
+
 .OUTPUTS
     Array of hashtables. Each hashtable matches the PSScriptAnalyzer-
     shape used by other static-layer producers, plus an additional
@@ -34,7 +42,12 @@
 param(
     [string]$RepoRoot = (Get-Location).Path,
     [string[]]$Path,
-    [switch]$All
+    [switch]$All,
+    # Skip files inside `Tests-<topic>/` directories. Set by the static
+    # analysis orchestrator during a full review to silence self-referential
+    # findings on scanner fixtures. Self-test runners (Tests-*/Run.ps1)
+    # leave it off so they can scan their own fixtures.
+    [switch]$ExcludeFixtures
 )
 
 $ErrorActionPreference = 'Stop'
@@ -967,15 +980,27 @@ function Invoke-FileScan {
     return $findings
 }
 
+function Test-IsScannerFixture {
+    # Files inside a `Tests-<topic>/` directory are by-convention scanner
+    # fixtures (inputs to a sibling Run.ps1), NOT real test files. Scanning
+    # them during a review produces self-referential noise: the fixture
+    # exists precisely to demonstrate the pattern this rule detects.
+    param([Parameter(Mandatory)][string]$FullPath)
+    $normalized = $FullPath -replace '\\', '/'
+    return $normalized -match '/Tests-[^/]+/'
+}
+
 function Resolve-FileList {
     param(
         [string[]]$Path,
         [switch]$All,
+        [switch]$ExcludeFixtures,
         [Parameter(Mandatory)][string]$RepoRoot
     )
     if ($All) {
         return @(Get-ChildItem -LiteralPath $RepoRoot -Recurse -File `
             -Include '*.Tests.ps1', 'Test-*.ps1' -ErrorAction SilentlyContinue |
+            Where-Object { -not $ExcludeFixtures -or -not (Test-IsScannerFixture -FullPath $_.FullName) } |
             Select-Object -ExpandProperty FullName)
     }
     if (-not $Path) { return @() }
@@ -988,9 +1013,11 @@ function Resolve-FileList {
         if (Test-Path -LiteralPath $p -PathType Container) {
             $files += Get-ChildItem -LiteralPath $p -Recurse -File `
                 -Include '*.Tests.ps1', 'Test-*.ps1' -ErrorAction SilentlyContinue |
+                Where-Object { -not $ExcludeFixtures -or -not (Test-IsScannerFixture -FullPath $_.FullName) } |
                 Select-Object -ExpandProperty FullName
         }
         elseif (Test-Path -LiteralPath $p -PathType Leaf) {
+            if ($ExcludeFixtures -and (Test-IsScannerFixture -FullPath $p)) { continue }
             $files += $p
         }
     }
@@ -1001,7 +1028,7 @@ function Resolve-FileList {
 
 Push-Location $RepoRoot
 try {
-    $files = Resolve-FileList -Path $Path -All:$All -RepoRoot $RepoRoot
+    $files = Resolve-FileList -Path $Path -All:$All -ExcludeFixtures:$ExcludeFixtures -RepoRoot $RepoRoot
     $allFindings = @()
     foreach ($f in $files) {
         $allFindings += Invoke-FileScan -FilePath $f -RepoRoot $RepoRoot
