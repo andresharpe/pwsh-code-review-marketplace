@@ -39,14 +39,16 @@ jobs:
           # the bump rather than failing the next N pushes -- a follow-up
           # `chore(release):`-prefixed PR can resync the JSONs.
           if git rev-parse --verify --quiet "refs/tags/v${next}" >/dev/null; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
+            skip=true
             echo "::warning::Tag v${next} already exists; skipping bump. Sync .claude-plugin/marketplace.json + plugins/pwsh-code-review/.claude-plugin/plugin.json to v${next} (or higher) in a chore(release):-prefixed PR."
+            echo "Computed next=v${next} but tag already exists; skip=true."
           else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
+            skip=false
+            echo "Bumping ${current} -> ${next}"
           fi
+          echo "skip=${skip}" >> "$GITHUB_OUTPUT"
           echo "current=$current" >> "$GITHUB_OUTPUT"
           echo "next=$next" >> "$GITHUB_OUTPUT"
-          echo "Bumping ${current} -> ${next}"
 
       - name: Bump versions in JSON files
         if: steps.ver.outputs.skip != 'true'
