@@ -46,6 +46,8 @@ Explicitly call out a particularly clean solution, a good test, a clever fix. Ca
 
 **Test:** would a senior engineer reading this PR also notice this and want to point it out? If not, drop it.
 
+**Posted as:** a bullet in the review body's "Praise" section, not as an inline review comment, so it does not create a resolvable thread the author has to dismiss. Praise has nothing for the author to act on.
+
 ## Confidence levels
 
 The agent assigns 0-100 based on the strength of evidence:

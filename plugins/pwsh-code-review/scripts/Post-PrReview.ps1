@@ -14,7 +14,13 @@
       - Each finding gets its own GitHub Resolve button.
       - Suggested fixes render as a clickable Apply button.
       - The review `body` stays summary-only (counts + verdict + optional
-        prior-review table) so the human reviewer can scan the PR view.
+        prior-review table + an optional Praise section) so the human
+        reviewer can scan the PR view.
+
+    Praise findings are an exception to the per-finding-inline rule: they
+    are rendered as bullets in the body's "Praise" section, not as
+    inline review comments, so they do not create resolvable threads the
+    author has to dismiss (praise has nothing for the author to act on).
 
     The review body and every comment body is filtered to ASCII before
     posting. UTF-8 dashes, arrows, smart quotes, etc. get mangled when
@@ -255,10 +261,13 @@ function ConvertTo-CommentBody {
 
 function Build-ReviewBody {
     <#
-    Summary-only review body: counts, verdict, optional prior-review table.
-    Per-finding details live in the inline comments, not here.
+    Summary-only review body: counts, verdict, optional prior-review table,
+    and an optional praise block. Per-finding details for actionable
+    severities (blocker/major/minor/nit/question) live in the inline
+    comments. Praise is rendered here instead of as an inline comment so
+    it does not create a resolvable thread the author has to dismiss.
     #>
-    param($Counts, [string]$Verdict, $PriorReviews, [string]$Version)
+    param($Counts, [string]$Verdict, $PriorReviews, [string]$Version, $Praises)
 
     $sb = [System.Text.StringBuilder]::new()
     [void]$sb.AppendLine("## Code review summary")
@@ -293,6 +302,23 @@ function Build-ReviewBody {
         }
     }
 
+    if ($Praises -and @($Praises).Count -gt 0) {
+        [void]$sb.AppendLine("### Praise")
+        [void]$sb.AppendLine()
+        foreach ($p in @($Praises)) {
+            $rule = if ($p.PSObject.Properties['rule'] -and $p.rule) {
+                " [$(ConvertTo-Ascii $p.rule)]"
+            } else { '' }
+            $loc = if ($p.PSObject.Properties['file'] -and $p.file) {
+                $lineStr = if ($p.PSObject.Properties['line_start'] -and $p.line_start) { ":$([int]$p.line_start)" } else { '' }
+                " ($(ConvertTo-Ascii $p.file)$lineStr)"
+            } else { '' }
+            $msg = ConvertTo-Ascii ($p.message ?? '')
+            [void]$sb.AppendLine("- **praise**$rule$loc - $msg")
+        }
+        [void]$sb.AppendLine()
+    }
+
     [void]$sb.AppendLine("---")
     [void]$sb.AppendLine("Per-finding details are inline. Each has its own Resolve button.")
     return ConvertTo-Ascii $sb.ToString().TrimEnd()
@@ -317,7 +343,13 @@ if (Test-Path -LiteralPath $PriorReviewsPath) {
 $counts  = $merged.counts
 $verdict = $merged.verdict
 $event   = Get-VerdictEvent -Verdict $verdict
-$body    = Build-ReviewBody -Counts $counts -Verdict $verdict -PriorReviews $priorReviews -Version $pluginVersion
+
+# Praise is rendered in the review body, not as inline review comments,
+# so it doesn't create a resolvable thread the author has to dismiss
+# (it has nothing for them to act on).
+$praises = @(@($merged.findings) | Where-Object { $_ -and $_.severity -eq 'praise' })
+
+$body    = Build-ReviewBody -Counts $counts -Verdict $verdict -PriorReviews $priorReviews -Version $pluginVersion -Praises $praises
 
 # Per-finding inline comments.
 $hunksByFile = Get-HunksByFile -DiffContext $diffContext
@@ -327,6 +359,7 @@ $clamped  = 0
 
 foreach ($f in @($merged.findings)) {
     if (-not $f) { continue }
+    if ($f.severity -eq 'praise') { continue }
     if (-not $f.PSObject.Properties['file'] -or -not $f.file) { $skipped++; continue }
 
     $desiredLine = if ($f.PSObject.Properties['line_start'] -and $f.line_start) { [int]$f.line_start }

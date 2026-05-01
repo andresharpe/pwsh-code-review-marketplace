@@ -284,16 +284,64 @@ Assert-True 'S6: cross-hunk range does NOT emit start_side' `
     (-not ($crossComment.PSObject.Properties.Name -contains 'start_side'))
 Remove-Scenario -TempRoot $tmp6
 
-# --- Scenario 7: live-mode payload path is the cache file (PayloadPath
+# --- Scenario 7: praise is rendered in the body, not as an inline comment ---
+# Praise has nothing for the author to act on, so it shouldn't create a
+# resolvable thread. It belongs in the summary body next to the counts
+# line so it's still visible without inflating the unresolved-comments
+# count on the PR conversation tab.
+
+$tmp7 = New-Scenario `
+    -Findings @(
+        [ordered]@{
+            severity   = 'major'
+            confidence = 85
+            rule       = 'PWSH-DIFF-300'
+            file       = 'src/Foo.ps1'
+            line_start = 5
+            line_end   = 5
+            message    = 'Real bug here.'
+        }
+        [ordered]@{
+            severity   = 'praise'
+            confidence = 90
+            rule       = 'PWSH-PRAISE'
+            file       = 'tests/Test-Foo.ps1'
+            line_start = 42
+            line_end   = 42
+            message    = 'Test coverage on the new path is excellent.'
+        }
+    ) `
+    -Verdict 'fix majors first' `
+    -Counts @{ blocker = 0; major = 1; minor = 0; nit = 0; question = 0; praise = 1 } `
+    -Hunks @([pscustomobject]@{ file = 'src/Foo.ps1'; line_start = 1; line_end = 10 })
+
+$payload7 = Invoke-DryRun -TempRoot $tmp7
+
+# Praise must NOT appear in the comments array.
+$praiseCommentSearch = $payload7.comments | Where-Object { $_.body -like '*PWSH-PRAISE*' -or $_.body -like '*excellent*' }
+Assert-True 'S7: praise produces no inline comment (no resolvable thread)' `
+    ($null -eq $praiseCommentSearch)
+Assert-True 'S7: only the non-praise finding becomes an inline comment' `
+    (@($payload7.comments).Count -eq 1)
+
+# Praise must appear in the review body.
+Assert-True 'S7: review body has Praise section' ($payload7.body -like '*Praise*')
+Assert-True 'S7: review body includes the praise rule label' ($payload7.body -like '*PWSH-PRAISE*')
+Assert-True 'S7: review body includes the praise message' ($payload7.body -like '*excellent*')
+Assert-True 'S7: review body includes the praise file location' ($payload7.body -like '*tests/Test-Foo.ps1:42*')
+
+Remove-Scenario -TempRoot $tmp7
+
+# --- Scenario 8: live-mode payload path is the cache file (PayloadPath
 #     hygiene). We can't really run live mode in a self-test, but we can
 #     verify the script defines $payloadPath under .pwsh-review/cache by
 #     checking the script source for the canonical path. Cheap check, but
 #     it locks the contract: PayloadPath must be a real on-disk artifact
 #     that survives the call.
 $srcText = Get-Content -Raw -LiteralPath $scriptPath
-Assert-True 'S7: live mode persists payload at cache/last-review-payload.json' `
+Assert-True 'S8: live mode persists payload at cache/last-review-payload.json' `
     ($srcText -match "last-review-payload\.json")
-Assert-True 'S7: live mode throws on non-zero gh api exit' `
+Assert-True 'S8: live mode throws on non-zero gh api exit' `
     ($srcText -match 'throw "gh api POST')
 
 Write-Output ''
