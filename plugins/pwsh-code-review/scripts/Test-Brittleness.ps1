@@ -23,6 +23,14 @@
 .PARAMETER All
     Recursively scan the whole repo for matching test files.
 
+.PARAMETER ExcludeFixtures
+    When set, skip files whose path traverses a `Tests-<topic>/` directory.
+    Those are scanner fixtures by convention -- inputs to a sibling
+    Run.ps1 that demonstrate the rule, not real test files. The static
+    analysis orchestrator (Invoke-StaticAnalysis.ps1) sets this during a
+    full review; self-test runners (Tests-*/Run.ps1) leave it off so they
+    can still scan their own fixtures.
+
 .OUTPUTS
     Array of hashtables. Each hashtable matches the PSScriptAnalyzer-
     shape used by other static-layer producers, plus an additional

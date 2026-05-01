@@ -30,6 +30,15 @@
 .PARAMETER RepoRoot
     Repository root.
 
+.PARAMETER ExcludeFixtures
+    When set, skip files whose path traverses a `Tests-<topic>/` directory.
+    Those are scanner fixtures by convention -- the templates-without-
+    a-substitution-rule demo files inside Tests-TemplateSubstitution/
+    demonstrate the rule, they are not active templates. The static
+    analysis orchestrator (Invoke-StaticAnalysis.ps1) sets this during a
+    full review; the self-test runner leaves it off so it can scan its
+    own fixtures.
+
 .OUTPUTS
     Array of PSSA-shape hashtables with an additional `confidence` field.
 #>
