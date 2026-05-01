@@ -36,7 +36,12 @@
 [CmdletBinding()]
 [OutputType([object[]])]
 param(
-    [string]$RepoRoot = (Get-Location).Path
+    [string]$RepoRoot = (Get-Location).Path,
+    # Skip files inside `Tests-<topic>/` directories. Set by the static
+    # analysis orchestrator during a full review to silence self-referential
+    # findings on scanner fixtures (templates-with-no-substitution-rule
+    # demo files). Self-test runners (Tests-*/Run.ps1) leave it off.
+    [switch]$ExcludeFixtures
 )
 
 $ErrorActionPreference = 'Stop'
@@ -237,6 +242,14 @@ try {
             if ($full -match '/\.pwsh-review/' -or
                 $full -match '/\.git/' -or
                 $full -match '/node_modules/') { return $false }
+            # Files inside `Tests-<topic>/` are by-convention scanner fixtures
+            # (inputs to a sibling Run.ps1), not active templates. They will
+            # frequently contain `{{TOKEN}}` references for demonstration that
+            # have no corresponding `-replace` rule, which is exactly what
+            # PWSH-TPL-001 looks for -- skip to avoid self-reference noise.
+            # Gated on -ExcludeFixtures so the self-test runner can still
+            # scan its own fixtures.
+            if ($ExcludeFixtures -and $full -match '/Tests-[^/]+/') { return $false }
             $relative = $full
             if ($relative.StartsWith($repoRootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
                 $relative = $relative.Substring($repoRootPrefix.Length)

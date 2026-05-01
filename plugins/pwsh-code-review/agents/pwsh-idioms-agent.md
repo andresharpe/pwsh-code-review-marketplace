@@ -143,7 +143,7 @@ Inside double-quoted here-strings (`@"..."@`), `$variable` interpolates, and `\$
 
 ### Template substitution
 
-The static layer flags `{{TOKEN}}` misuse in markdown under `PWSH-TPL-001` (unknown token, no `-replace` rule) and `PWSH-TPL-002` (dead "if `{{X}}` is empty" prose where `X` is provably always non-empty). Do not re-flag these -- the static layer owns them. You may upgrade a `PWSH-TPL-002` finding from `minor` to `major` only when you can read the corresponding `-replace` source and confirm the dead-conditional reasoning. Otherwise leave it alone.
+The static layer flags `{{token-name}}` misuse in markdown under `PWSH-TPL-001` (unknown token, no `-replace` rule) and `PWSH-TPL-002` (dead "if `{{token-name}}` is empty" prose where the token is provably always non-empty). Do not re-flag these -- the static layer owns them. You may upgrade a `PWSH-TPL-002` finding from `minor` to `major` only when you can read the corresponding `-replace` source and confirm the dead-conditional reasoning. Otherwise leave it alone.
 
 ### Output stream choice
 

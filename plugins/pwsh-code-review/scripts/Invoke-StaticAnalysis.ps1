@@ -239,8 +239,32 @@ try {
             Import-Module Pester
             Push-Location $repoRoot
             try {
+                # Files inside `Tests-<topic>/` are by-convention scanner
+                # fixtures (inputs to a sibling Run.ps1), NOT Pester tests.
+                # They demonstrate intentional bugs, reference assertion
+                # cmdlets that may not exist (e.g. Assert-True), or define
+                # functions named after real cmdlets that fail to shadow
+                # inside Pester's Describe/It scope -- which can cause real
+                # side effects (e.g. Start-Process notepad.exe). Discover
+                # the candidate test files explicitly so we never feed a
+                # fixture into Pester.
+                $searchRoot = if (Test-Path 'tests') { 'tests' } else { '.' }
+                $testFiles = @(Get-ChildItem -Path $searchRoot -Recurse -File `
+                    -Filter '*.Tests.ps1' -ErrorAction SilentlyContinue |
+                    Where-Object {
+                        $full = $_.FullName -replace '\\', '/'
+                        $full -notmatch '/Tests-[^/]+/'
+                    } |
+                    Select-Object -ExpandProperty FullName)
+                if (-not $testFiles) {
+                    , [ordered]@{
+                        ran = $true; total = 0; passed = 0; failed = 0;
+                        skipped = 0; failed_tests = @()
+                    }
+                    return
+                }
                 $cfg = New-PesterConfiguration
-                $cfg.Run.Path = if (Test-Path 'tests') { 'tests' } else { '.' }
+                $cfg.Run.Path = $testFiles
                 $cfg.Run.PassThru = $true
                 $cfg.Output.Verbosity = 'None'
                 $cfg.Run.Throw = $false
@@ -297,7 +321,12 @@ try {
                 param($repoRoot, $scope, $script)
                 Push-Location $repoRoot
                 try {
-                    , (& $script -RepoRoot $repoRoot -Path $scope)
+                    # -ExcludeFixtures: skip files inside `Tests-<topic>/`
+                    # directories (scanner fixtures by convention). Reviews
+                    # care about real code, not the demo files the scanner
+                    # uses to self-test. Self-test runners (Tests-*/Run.ps1)
+                    # invoke the scanner directly without this switch.
+                    , (& $script -RepoRoot $repoRoot -Path $scope -ExcludeFixtures)
                 } finally { Pop-Location }
             } -ArgumentList $RepoRoot, $tbScope, $tbScript
         }
@@ -311,7 +340,7 @@ try {
             param($repoRoot, $script)
             Push-Location $repoRoot
             try {
-                , (& $script -RepoRoot $repoRoot)
+                , (& $script -RepoRoot $repoRoot -ExcludeFixtures)
             } finally { Pop-Location }
         } -ArgumentList $RepoRoot, $tplScript
     }

@@ -105,10 +105,10 @@ A finding fires only when the candidate expression sits inside an assertion call
 
 ### Template substitution
 
-When the project renders prompts (or any text) by `-replace`-ing `{{TOKEN}}` placeholders in markdown, the reviewer flags two failure classes under `PWSH-TPL-NNN`. The token catalog is auto-discovered from `-replace '\{\{TOKEN\}\}', $rhs` patterns and snapshotted to `.pwsh-review/template-rules.json` at bootstrap.
+When the project renders prompts (or any text) by `-replace`-ing `{{token-name}}` placeholders in markdown, the reviewer flags two failure classes under `PWSH-TPL-NNN`. The token catalog is auto-discovered from `-replace '\{\{TOKEN_NAME\}\}', $rhs` patterns and snapshotted to `.pwsh-review/template-rules.json` at bootstrap. The rule itself only fires on uppercase placeholders (regex `\{\{[A-Z][A-Z0-9_]*\}\}`); lowercase placeholders such as the `{{token-name}}` examples in this paragraph are out of scope by design.
 
-- `PWSH-TPL-001` - the markdown references a `{{TOKEN}}` that has no `-replace` rule anywhere in the repo. The runtime will leave the literal placeholder in the rendered output. Either fix the typo or add a substitution rule.
-- `PWSH-TPL-002` - prose conditional that the substitution will never satisfy: text near a `{{X}}` reference says "if `{{X}}` is empty / missing / blank / absent / not set". When `X` is provably always non-empty (the `-replace` source declares an explicit fallback), the conditional is dead code (confidence 80). When `X`'s emptiness is uncertain, the finding is hedged (confidence 60).
+- `PWSH-TPL-001` - the markdown references a `{{token-name}}` that has no `-replace` rule anywhere in the repo. The runtime will leave the literal placeholder in the rendered output. Either fix the typo or add a substitution rule.
+- `PWSH-TPL-002` - prose conditional that the substitution will never satisfy: text near a `{{token-name}}` reference says "if `{{token-name}}` is empty / missing / blank / absent / not set". When the token is provably always non-empty (the `-replace` source declares an explicit fallback), the conditional is dead code (confidence 80). When the token's emptiness is uncertain, the finding is hedged (confidence 60).
 
 ### Cross-module data shapes
 
