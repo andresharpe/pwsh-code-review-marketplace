@@ -33,11 +33,23 @@ jobs:
           current=$(jq -r .version .claude-plugin/marketplace.json)
           IFS=. read -r maj min pat <<<"$current"
           next="${maj}.$((min + 1)).0"
+          # If v${next} already exists as a tag, the JSONs are behind the
+          # tag history (e.g. an earlier run committed the JSON bump but
+          # failed before tagging, or someone tagged out of band). Skip
+          # the bump rather than failing the next N pushes -- a follow-up
+          # `chore(release):`-prefixed PR can resync the JSONs.
+          if git rev-parse --verify --quiet "refs/tags/v${next}" >/dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Tag v${next} already exists; skipping bump. Sync .claude-plugin/marketplace.json + plugins/pwsh-code-review/.claude-plugin/plugin.json to v${next} (or higher) in a chore(release):-prefixed PR."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
           echo "current=$current" >> "$GITHUB_OUTPUT"
           echo "next=$next" >> "$GITHUB_OUTPUT"
           echo "Bumping ${current} -> ${next}"
 
       - name: Bump versions in JSON files
+        if: steps.ver.outputs.skip != 'true'
         run: |
           next="${{ steps.ver.outputs.next }}"
 
@@ -60,6 +72,7 @@ jobs:
           mv "$tmp" plugins/pwsh-code-review/.claude-plugin/plugin.json
 
       - name: Commit, tag, push
+        if: steps.ver.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
